@@ -1,10 +1,23 @@
  const multer = require('multer');
 // Support both CommonJS and variations in how multer-storage-cloudinary exports
 const multerStorageCloudinary = require('multer-storage-cloudinary');
-const CloudinaryStorage = multerStorageCloudinary.CloudinaryStorage || multerStorageCloudinary;
+// Support multiple export shapes: named `CloudinaryStorage`, default export, or module itself
+const CloudinaryStorage = multerStorageCloudinary.CloudinaryStorage || multerStorageCloudinary.default || multerStorageCloudinary;
 const cloudinary = require('../config/cloudinary');
 
 // Cloudinary storage configuration
+if (typeof CloudinaryStorage !== 'function') {
+  let pkgInfo = {};
+  try {
+    pkgInfo = require('../package.json');
+  } catch (e) {
+    // ignore
+  }
+  console.error('CloudinaryStorage constructor not found. multer-storage-cloudinary export keys:', Object.keys(multerStorageCloudinary || {}));
+  console.error('Installed multer-storage-cloudinary version:', pkgInfo.dependencies && pkgInfo.dependencies['multer-storage-cloudinary']);
+  throw new Error('CloudinaryStorage is not a constructor. Check multer-storage-cloudinary export shape and installed version.');
+}
+
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
