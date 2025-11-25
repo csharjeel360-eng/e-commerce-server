@@ -2,69 +2,45 @@ const multer = require('multer');
 const cloudinary = require('../config/cloudinary');
 const { Readable } = require('stream');
 
-// Try to use multer-storage-cloudinary if available; otherwise fallback to memory storage
-let multerInstance = null;
-let usingAdapter = false;
-
-try {
-  const multerStorageCloudinary = require('multer-storage-cloudinary');
-  const CloudinaryStorage = multerStorageCloudinary.CloudinaryStorage || multerStorageCloudinary.default || multerStorageCloudinary;
-  
-  if (typeof CloudinaryStorage === 'function') {
-    const storage = new CloudinaryStorage({
-      cloudinary: cloudinary,
-      params: {
-        folder: 'ecommerce',
-        format: async () => 'webp',
-        public_id: () => `image-${Date.now()}-${Math.round(Math.random() * 1E9)}`,
-      },
-    });
-
-    const fileFilter = (req, file, cb) => {
-      if (file.mimetype && file.mimetype.startsWith && file.mimetype.startsWith('image/')) {
-        cb(null, true);
-      } else {
-        cb(new Error('Not an image! Please upload only images.'), false);
-      }
-    };
-
-    multerInstance = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
-    usingAdapter = true;
+// Initialize multer with memory storage as default
+const storage = multer.memoryStorage();
+const baseMulter = multer({ 
+  storage, 
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype && file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Not an image! Please upload only images.'), false);
+    }
   }
-} catch (e) {
-  // adapter not available — will fallback
-  console.log('multer-storage-cloudinary not available, using fallback');
+});
+
+// Function to upload buffer to Cloudinary
+async function uploadToCloudinaryBuffer(buffer, options = {}) {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(options, (error, result) => {
+      if (error) return reject(error);
+      resolve(result);
+    });
+    
+    const readableStream = new Readable();
+    readableStream._read = () => {};
+    readableStream.push(buffer);
+    readableStream.push(null);
+    readableStream.pipe(uploadStream);
+  });
 }
 
-// Fallback: memory storage + direct Cloudinary upload_stream
-if (!multerInstance) {
-  const storage = multer.memoryStorage();
-  multerInstance = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
-
-  async function uploadToCloudinaryBuffer(buffer, options = {}) {
-    return new Promise((resolve, reject) => {
-      const uploadStream = cloudinary.uploader.upload_stream(options, (error, result) => {
-        if (error) return reject(error);
-        resolve(result);
-      });
-      const s = new Readable();
-      s._read = () => {};
-      s.push(buffer);
-      s.push(null);
-      s.pipe(uploadStream);
-    });
-  }
-
-  // Wrap multer's single/array to perform Cloudinary upload after multer stores buffer
-  const originalSingle = multerInstance.single.bind(multerInstance);
-  const originalArray = multerInstance.array.bind(multerInstance);
-  const originalFields = multerInstance.fields.bind(multerInstance);
-
-  module.exports = {
-    single: (fieldName) => (req, res, next) => {
-      originalSingle(fieldName)(req, res, async (err) => {
+// Enhanced middleware functions
+const uploadMiddleware = {
+  // Single file upload
+  single: (fieldName) => {
+    return (req, res, next) => {
+      baseMulter.single(fieldName)(req, res, async (err) => {
         if (err) return next(err);
         if (!req.file) return next();
+        
         try {
           const publicId = `ecommerce/image-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
           const result = await uploadToCloudinaryBuffer(req.file.buffer, {
@@ -72,82 +48,99 @@ if (!multerInstance) {
             public_id: publicId,
             transformation: [{ format: 'webp' }]
           });
+          
+          // Enhance the file object with Cloudinary info
           req.file.path = result.secure_url || result.url;
           req.file.filename = result.public_id;
           req.file.size = result.bytes || req.file.size;
+          req.file.cloudinary = result;
+          
           next();
         } catch (uploadError) {
           next(uploadError);
         }
       });
-    },
-    array: (fieldName, maxCount = 10) => (req, res, next) => {
-      originalArray(fieldName, maxCount)(req, res, async (err) => {
+    };
+  },
+
+  // Multiple files upload
+  array: (fieldName, maxCount = 10) => {
+    return (req, res, next) => {
+      baseMulter.array(fieldName, maxCount)(req, res, async (err) => {
         if (err) return next(err);
         if (!req.files || req.files.length === 0) return next();
+        
         try {
-          const uploads = await Promise.all(req.files.map(async (file) => {
+          const uploadPromises = req.files.map(async (file) => {
             const publicId = `ecommerce/image-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
             const result = await uploadToCloudinaryBuffer(file.buffer, {
               folder: 'ecommerce',
               public_id: publicId,
               transformation: [{ format: 'webp' }]
             });
+            
             return {
               originalname: file.originalname,
               filename: result.public_id,
               path: result.secure_url || result.url,
-              size: result.bytes || file.size
+              size: result.bytes || file.size,
+              cloudinary: result
             };
-          }));
-          req.files = uploads;
+          });
+          
+          req.files = await Promise.all(uploadPromises);
           next();
         } catch (uploadError) {
           next(uploadError);
         }
       });
-    },
-    fields: (fieldsArray) => (req, res, next) => {
-      originalFields(fieldsArray)(req, res, async (err) => {
+    };
+  },
+
+  // Multiple fields upload
+  fields: (fieldsArray) => {
+    return (req, res, next) => {
+      baseMulter.fields(fieldsArray)(req, res, async (err) => {
         if (err) return next(err);
         if (!req.files || Object.keys(req.files).length === 0) return next();
+        
         try {
           const fieldNames = Object.keys(req.files);
           const uploadedPerField = {};
           
           for (const field of fieldNames) {
             const files = req.files[field];
-            const uploads = await Promise.all(files.map(async (file) => {
+            const uploadPromises = files.map(async (file) => {
               const publicId = `ecommerce/image-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
               const result = await uploadToCloudinaryBuffer(file.buffer, {
                 folder: 'ecommerce',
                 public_id: publicId,
                 transformation: [{ format: 'webp' }]
               });
+              
               return {
                 originalname: file.originalname,
                 filename: result.public_id,
                 path: result.secure_url || result.url,
-                size: result.bytes || file.size
+                size: result.bytes || file.size,
+                cloudinary: result
               };
-            }));
-            uploadedPerField[field] = uploads;
+            });
+            
+            uploadedPerField[field] = await Promise.all(uploadPromises);
           }
+          
           req.files = uploadedPerField;
           next();
         } catch (uploadError) {
           next(uploadError);
         }
       });
-    },
-    multer: multerInstance
-  };
-} else {
-  // If we reached here, multerInstance uses adapter and we should export compatible API
-  module.exports = {
-    single: (fieldName) => multerInstance.single(fieldName),
-    array: (fieldName, maxCount = 10) => multerInstance.array(fieldName, maxCount),
-    fields: (fieldsArray) => multerInstance.fields(fieldsArray),
-    multer: multerInstance
-  };
-}
+    };
+  },
+
+  // Expose the base multer instance for advanced usage
+  multer: baseMulter
+};
+
+module.exports = uploadMiddleware;
