@@ -150,6 +150,7 @@ router.get('/test', (req, res) => {
   });
 });
 
+
 // Catch-all DELETE route for debugging
 router.delete('*', (req, res) => {
   console.log('❌ Unmatched DELETE request:', {

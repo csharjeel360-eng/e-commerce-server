@@ -1,6 +1,7 @@
 // middleware/upload.js - FIXED VERSION
 // Prevent duplicate loading with singleton pattern
 if (!global.uploadMiddlewareInstance) {
+  // Move all requires inside the singleton check
   const multer = require('multer');
   const cloudinary = require('../config/cloudinary');
   const { Readable } = require('stream');
