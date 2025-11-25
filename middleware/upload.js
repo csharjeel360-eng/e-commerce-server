@@ -1,211 +1,119 @@
-// middleware/upload.js - FIXED VERSION
+// Unified upload middleware
+// Uses multer-storage-cloudinary if available, otherwise memory storage + direct Cloudinary upload_stream
 const multer = require('multer');
 const cloudinary = require('../config/cloudinary');
 const { Readable } = require('stream');
 
-console.log('🔄 Upload middleware initialized');
-
-// Basic memory storage
-const storage = multer.memoryStorage();
-
-const fileFilter = (req, file, cb) => {
-  if (file.mimetype && file.mimetype.startsWith('image/')) {
-    cb(null, true);
-  } else {
-    cb(new Error('Only image files are allowed'), false);
-  }
-};
-
-const baseMulter = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: { fileSize: 10 * 1024 * 1024 }
-});
-
-// Cloudinary upload function
-const uploadToCloudinaryBuffer = (buffer, options = {}) => {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream({
-      folder: 'ecommerce',
-      format: 'webp',
-      ...options
-    }, (error, result) => {
-      if (error) {
-        console.error('❌ Cloudinary upload error:', error);
-        reject(error);
-      } else {
-        console.log('✅ Cloudinary upload success:', result.public_id);
-        resolve(result);
+let multerInstance = null;
+let adapterAvailable = false;
+try {
+  const multerStorageCloudinary = require('multer-storage-cloudinary');
+  const CloudinaryStorage = multerStorageCloudinary.CloudinaryStorage || multerStorageCloudinary.default || multerStorageCloudinary;
+  if (typeof CloudinaryStorage === 'function') {
+    const storage = new CloudinaryStorage({
+      cloudinary,
+      params: {
+        folder: 'ecommerce',
+        format: async () => 'webp',
+        public_id: () => `image-${Date.now()}-${Math.round(Math.random() * 1e9)}`
       }
     });
+    multerInstance = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
+    adapterAvailable = true;
+  }
+} catch (e) {
+  // adapter not present or failed to initialize; fallback below
+}
 
-    const readableStream = new Readable();
-    readableStream._read = () => {};
-    readableStream.push(buffer);
-    readableStream.push(null);
-    readableStream.pipe(uploadStream);
-  });
-};
+if (!multerInstance) {
+  const storage = multer.memoryStorage();
+  multerInstance = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Enhanced middleware functions
-const uploadMiddleware = {
-  // Single file upload
-  single: (fieldName) => {
-    return (req, res, next) => {
-      console.log(`📤 Upload single: ${fieldName}`);
-      
-      baseMulter.single(fieldName)(req, res, async (err) => {
-        if (err) {
-          console.error('❌ Multer error:', err);
-          return next(err);
-        }
-        
-        if (!req.file) {
-          console.log('ℹ️ No file uploaded');
-          return next();
-        }
+  async function uploadToCloudinaryBuffer(buffer, options = {}) {
+    return new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(options, (err, result) => {
+        if (err) return reject(err);
+        resolve(result);
+      });
+      const s = new Readable();
+      s._read = () => {};
+      s.push(buffer);
+      s.push(null);
+      s.pipe(uploadStream);
+    });
+  }
 
-        console.log('📁 File received:', {
-          originalname: req.file.originalname,
-          mimetype: req.file.mimetype,
-          size: req.file.size
-        });
+  const originalSingle = multerInstance.single.bind(multerInstance);
+  const originalArray = multerInstance.array.bind(multerInstance);
+  const originalFields = multerInstance.fields.bind(multerInstance);
 
+  module.exports = {
+    single: (fieldName) => (req, res, next) => {
+      originalSingle(fieldName)(req, res, async (err) => {
+        if (err) return next(err);
+        if (!req.file) return next();
         try {
           const publicId = `image-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-          const result = await uploadToCloudinaryBuffer(req.file.buffer, {
-            public_id: publicId
-          });
-          
-          // Enhance the file object with Cloudinary info
-          req.file.path = result.secure_url;
+          const result = await uploadToCloudinaryBuffer(req.file.buffer, { folder: 'ecommerce', public_id: publicId, transformation: [{ format: 'webp' }] });
+          req.file.path = result.secure_url || result.url;
           req.file.filename = result.public_id;
-          req.file.size = result.bytes;
-          req.file.cloudinary = result;
-
-          console.log('✅ File uploaded to Cloudinary:', req.file.path);
+          req.file.size = result.bytes || req.file.size;
           next();
         } catch (uploadError) {
-          console.error('❌ Cloudinary upload failed:', uploadError);
           next(uploadError);
         }
       });
-    };
-  },
-
-  // Multiple files upload
-  array: (fieldName, maxCount = 10) => {
-    return (req, res, next) => {
-      console.log(`📤 Upload array: ${fieldName}, max: ${maxCount}`);
-      
-      baseMulter.array(fieldName, maxCount)(req, res, async (err) => {
-        if (err) {
-          console.error('❌ Multer error:', err);
-          return next(err);
-        }
-        
-        if (!req.files || req.files.length === 0) {
-          console.log('ℹ️ No files uploaded');
-          return next();
-        }
-
-        console.log(`📁 ${req.files.length} files received`);
-
+    },
+    array: (fieldName, max = 10) => (req, res, next) => {
+      originalArray(fieldName, max)(req, res, async (err) => {
+        if (err) return next(err);
+        if (!req.files || req.files.length === 0) return next();
         try {
-          const uploadPromises = req.files.map(async (file) => {
+          const uploaded = await Promise.all(req.files.map(async (file) => {
             const publicId = `image-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-            const result = await uploadToCloudinaryBuffer(file.buffer, {
-              public_id: publicId
-            });
-            
-            return {
-              originalname: file.originalname,
-              mimetype: file.mimetype,
-              filename: result.public_id,
-              path: result.secure_url,
-              size: result.bytes,
-              cloudinary: result
-            };
-          });
-
-          req.files = await Promise.all(uploadPromises);
-          console.log(`✅ ${req.files.length} files uploaded to Cloudinary`);
+            const result = await uploadToCloudinaryBuffer(file.buffer, { folder: 'ecommerce', public_id: publicId, transformation: [{ format: 'webp' }] });
+            return { originalname: file.originalname, filename: result.public_id, path: result.secure_url || result.url, size: result.bytes || file.size };
+          }));
+          req.files = uploaded;
           next();
         } catch (uploadError) {
-          console.error('❌ Cloudinary upload failed:', uploadError);
           next(uploadError);
         }
       });
-    };
-  },
-
-  // Multiple fields upload
-  fields: (fieldsArray) => {
-    return (req, res, next) => {
-      console.log(`📤 Upload fields:`, fieldsArray);
-      
-      baseMulter.fields(fieldsArray)(req, res, async (err) => {
-        if (err) {
-          console.error('❌ Multer error:', err);
-          return next(err);
-        }
-        
-        if (!req.files || Object.keys(req.files).length === 0) {
-          console.log('ℹ️ No files uploaded');
-          return next();
-        }
-
+    },
+    fields: (fieldsArray) => (req, res, next) => {
+      originalFields(fieldsArray)(req, res, async (err) => {
+        if (err) return next(err);
+        if (!req.files || Object.keys(req.files).length === 0) return next();
         try {
           const fieldNames = Object.keys(req.files);
-          const uploadedPerField = {};
-          
+          const resultObj = {};
           for (const field of fieldNames) {
             const files = req.files[field];
-            console.log(`📁 Processing ${files.length} files for field: ${field}`);
-            
-            const uploadPromises = files.map(async (file) => {
+            const uploaded = await Promise.all(files.map(async (file) => {
               const publicId = `image-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-              const result = await uploadToCloudinaryBuffer(file.buffer, {
-                public_id: publicId
-              });
-              
-              return {
-                originalname: file.originalname,
-                mimetype: file.mimetype,
-                filename: result.public_id,
-                path: result.secure_url,
-                size: result.bytes,
-                cloudinary: result
-              };
-            });
-            
-            uploadedPerField[field] = await Promise.all(uploadPromises);
+              const result = await uploadToCloudinaryBuffer(file.buffer, { folder: 'ecommerce', public_id: publicId, transformation: [{ format: 'webp' }] });
+              return { originalname: file.originalname, filename: result.public_id, path: result.secure_url || result.url, size: result.bytes || file.size };
+            }));
+            resultObj[field] = uploaded;
           }
-          
-          req.files = uploadedPerField;
-          console.log(`✅ Files uploaded for fields: ${fieldNames.join(', ')}`);
+          req.files = resultObj;
           next();
         } catch (uploadError) {
-          console.error('❌ Cloudinary upload failed:', uploadError);
           next(uploadError);
         }
       });
-    };
-  },
+    },
+    multer: multerInstance
+  };
+}
 
-  // Expose the base multer instance for advanced usage
-  multer: baseMulter,
-
-  // Utility function to check if middleware is working
-  test: () => {
-    return (req, res) => {
-      res.json({
-        success: true,
-        message: 'Upload middleware is working correctly',
-        timestamp: new Date().toISOString()
-      });
-    };
-  }
-};
-
-module.exports = uploadMiddleware;
+// If adapter is available, export multerInstance-compatible API
+if (adapterAvailable) {
+  module.exports = {
+    single: (fieldName) => multerInstance.single(fieldName),
+    array: (fieldName, maxCount = 10) => multerInstance.array(fieldName, maxCount),
+    fields: (fieldsArray) => multerInstance.fields(fieldsArray),
+    multer: multerInstance
+  };
+}
