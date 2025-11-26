@@ -33,8 +33,9 @@ const corsOptions = {
     
     const allowedOrigins = [
       process.env.CLIENT_URL,
-      'http://localhost:5173',
-      'https://yourdomain.com' // Add your production domain
+       
+      'http://localhost:5173'
+       // Add your production domain
     ];
     
     if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
