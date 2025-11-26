@@ -25,59 +25,127 @@ connectDB();
 // Initialize Firebase Admin
 initializeFirebaseAdmin();
 
-// CORS configuration
+// IMPROVED CORS Configuration
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    // Allow requests with no origin (like mobile apps, curl requests, server-to-server)
+    if (!origin) {
+      console.log('🌐 CORS: No origin (server-to-server or mobile app request)');
+      return callback(null, true);
+    }
     
+    // Define allowed origins
     const allowedOrigins = [
       process.env.CLIENT_URL,
-       
+      'http://localhost:3000',
       'http://localhost:5173',
-     ' http://localhost:5174'
-      
-       // Add your production domain
-    ];
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      'https://localhost:3000',
+      'https://localhost:5173',
+      'https://e-commerce-client-ecru.vercel.app', // Your Vercel frontend
+      'https://*.vercel.app', // All Vercel preview deployments
+      'https://vercel.app' // Vercel main domain
+    ].filter(Boolean); // Remove any undefined/null values
+
+    // Log CORS check for debugging
+    console.log(`🌐 CORS Check - Origin: ${origin}, Allowed: ${allowedOrigins.some(allowed => origin === allowed || origin.startsWith(allowed.replace('*', '')))}`);
+
+    // Check if origin matches exactly or matches wildcard pattern
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (allowedOrigin.includes('*')) {
+        // Handle wildcard origins like https://*.vercel.app
+        const baseDomain = allowedOrigin.replace('*.', '');
+        return origin.endsWith(baseDomain);
+      }
+      return origin === allowedOrigin;
+    });
+
+    // Allow in development or if origin is in allowed list
+    if (isAllowed || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      console.error(`❌ CORS Blocked: Origin ${origin} not in allowed list`);
+      callback(new Error(`CORS policy: Origin ${origin} not allowed`), false);
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-Requested-With',
+    'Accept',
+    'Origin',
+    'Access-Control-Request-Method',
+    'Access-Control-Request-Headers',
+    'X-API-Key'
+  ],
+  exposedHeaders: [
+    'Content-Range',
+    'X-Content-Range',
+    'X-Total-Count'
+  ],
+  maxAge: 86400, // 24 hours - cache preflight requests
+  optionsSuccessStatus: 200,
+  preflightContinue: false
 };
 
-// Security middleware
+// Apply CORS middleware to all routes
 app.use(cors(corsOptions));
+
+// Handle preflight requests globally
+app.options('*', cors(corsOptions));
+
+// Security middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Add security headers
+// Enhanced security headers middleware
 app.use((req, res, next) => {
   // Remove sensitive headers
   res.removeHeader('X-Powered-By');
   
+  // Get the origin from request
+  const requestOrigin = req.headers.origin;
+  const allowedOrigins = [
+    process.env.CLIENT_URL,
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://e-commerce-client-ecru.vercel.app'
+  ].filter(Boolean);
+
+  // Set CORS headers dynamically
+  if (requestOrigin && allowedOrigins.includes(requestOrigin)) {
+    res.setHeader('Access-Control-Allow-Origin', requestOrigin);
+  }
+  
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Range, X-Content-Range, X-Total-Count');
+  res.setHeader('Access-Control-Max-Age', '86400');
+
   // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   
-  // CSP header
+  // CSP header - less restrictive for API
   res.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;"
+    "default-src 'self'; connect-src 'self' https:; font-src 'self' https: data:; frame-src 'self'; img-src 'self' https: data: blob:; manifest-src 'self'; media-src 'self'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
   );
+
+  // HSTS only in production
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   
   next();
 });
 
-// Request logging middleware
+// Enhanced request logging middleware
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - IP: ${req.ip}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - Origin: ${req.headers.origin || 'No Origin'} - IP: ${req.ip} - User-Agent: ${req.headers['user-agent']?.substring(0, 50)}...`);
   next();
 });
 
@@ -90,10 +158,37 @@ app.use('/api/banners', bannerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api/users', userRoutes); // Added user routes
+app.use('/api/users', userRoutes);
 
-// Home route
+// CORS Test Endpoint
+app.get('/api/cors-test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS is working correctly! 🎉',
+    corsInfo: {
+      origin: req.headers.origin,
+      method: req.method,
+      credentials: 'allowed',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV
+    },
+    serverInfo: {
+      status: 'Running',
+      uptime: Math.floor(process.uptime()) + ' seconds',
+      memory: process.memoryUsage()
+    }
+  });
+});
+
+// Home route with enhanced info
 app.get('/', (req, res) => {
+  const allowedOrigins = [
+    process.env.CLIENT_URL,
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://e-commerce-client-ecru.vercel.app'
+  ].filter(Boolean);
+
   res.json({ 
     message: 'E-commerce API is running with Firebase & Cloudinary Integration',
     version: '1.0.0',
@@ -102,7 +197,8 @@ app.get('/', (req, res) => {
       database: 'MongoDB ✅',
       cloudStorage: 'Cloudinary ✅',
       authentication: 'Firebase Admin ✅',
-      fileUpload: 'Active ✅'
+      fileUpload: 'Active ✅',
+      cors: 'Configured ✅'
     },
     endpoints: {
       auth: '/api/auth',
@@ -113,13 +209,23 @@ app.get('/', (req, res) => {
       blogs: '/api/blogs',
       admin: '/api/admin',
       upload: '/api/uploads',
-      cart: '/api/cart'
+      cart: '/api/cart',
+      health: '/health',
+      status: '/api/status',
+      corsTest: '/api/cors-test'
+    },
+    cors: {
+      enabled: true,
+      credentials: true,
+      allowedOrigins: allowedOrigins,
+      currentOrigin: req.headers.origin,
+      environment: process.env.NODE_ENV
     },
     timestamp: new Date().toISOString()
   });
 });
 
-// Health check route with service status
+// Enhanced health check route with service status
 app.get('/health', async (req, res) => {
   const healthCheck = {
     status: 'OK',
@@ -127,11 +233,16 @@ app.get('/health', async (req, res) => {
     services: {
       database: 'Checking...',
       firebase: 'Checking...',
-      cloudinary: 'Checking...'
+      cloudinary: 'Checking...',
+      cors: 'Configured ✅'
     },
     uptime: process.uptime(),
     memory: process.memoryUsage(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV,
+    cors: {
+      origin: req.headers.origin,
+      allowed: true
+    }
   };
 
   try {
@@ -141,15 +252,25 @@ app.get('/health', async (req, res) => {
 
     // Check Firebase Admin
     const { admin } = require('./config/firebaseAdmin');
-    healthCheck.services.firebase = 'Initialized ✅';
+    healthCheck.services.firebase = admin ? 'Initialized ✅' : 'Failed ❌';
 
     // Check Cloudinary (simple ping)
-    healthCheck.services.cloudinary = 'Configured ✅';
+    const cloudinary = require('cloudinary').v2;
+    healthCheck.services.cloudinary = cloudinary.config().cloud_name ? 'Configured ✅' : 'Failed ❌';
+
+    // Overall status
+    healthCheck.status = Object.values(healthCheck.services).every(service => 
+      service.includes('✅') || service === 'Configured ✅'
+    ) ? 'OK' : 'DEGRADED';
 
     res.json(healthCheck);
   } catch (error) {
-    healthCheck.status = 'Degraded';
+    healthCheck.status = 'ERROR';
     healthCheck.error = error.message;
+    healthCheck.services.database = 'Error ❌';
+    healthCheck.services.firebase = 'Error ❌';
+    healthCheck.services.cloudinary = 'Error ❌';
+    
     res.status(503).json(healthCheck);
   }
 });
@@ -163,8 +284,15 @@ app.get('/api/status', (req, res) => {
       database: 'Connected',
       firebase: 'Initialized',
       cloudinary: 'Active',
+      cors: 'Enabled',
       timestamp: new Date().toISOString(),
-      uptime: Math.floor(process.uptime()) + ' seconds'
+      uptime: Math.floor(process.uptime()) + ' seconds',
+      environment: process.env.NODE_ENV,
+      corsInfo: {
+        origin: req.headers.origin,
+        method: req.method,
+        credentials: 'allowed'
+      }
     }
   });
 });
@@ -176,6 +304,7 @@ app.use('*', (req, res) => {
     message: 'API endpoint not found',
     requestedUrl: req.originalUrl,
     method: req.method,
+    origin: req.headers.origin,
     availableEndpoints: {
       auth: [
         'POST /api/auth/firebase - Firebase authentication',
@@ -211,7 +340,8 @@ app.use('*', (req, res) => {
       general: [
         'GET / - API information',
         'GET /health - Health check',
-        'GET /api/status - API status'
+        'GET /api/status - API status',
+        'GET /api/cors-test - CORS test endpoint'
       ]
     },
     documentation: 'Check / endpoint for basic API structure'
@@ -226,8 +356,29 @@ app.use((error, req, res, next) => {
     url: req.originalUrl,
     method: req.method,
     ip: req.ip,
+    origin: req.headers.origin,
     timestamp: new Date().toISOString()
   });
+
+  // CORS errors - handle specially to ensure proper headers
+  if (error.message && error.message.includes('CORS')) {
+    const allowedOrigins = [
+      process.env.CLIENT_URL,
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'https://e-commerce-client-ecru.vercel.app'
+    ].filter(Boolean);
+
+    return res.status(403).json({
+      success: false,
+      message: error.message,
+      code: 'CORS_ERROR',
+      requestedOrigin: req.headers.origin,
+      allowedOrigins: allowedOrigins,
+      environment: process.env.NODE_ENV,
+      documentation: 'Please check your frontend URL is in the allowed origins list'
+    });
+  }
 
   // Mongoose validation error
   if (error.name === 'ValidationError') {
@@ -320,15 +471,6 @@ app.use((error, req, res, next) => {
       code: 'TOKEN_EXPIRED'
     });
   }
-
-  // CORS errors
-  if (error.message === 'Not allowed by CORS') {
-    return res.status(403).json({
-      success: false,
-      message: 'CORS policy: Origin not allowed',
-      code: 'CORS_ERROR'
-    });
-  }
   
   // Rate limiting errors
   if (error.status === 429) {
@@ -394,6 +536,13 @@ process.on('uncaughtException', (err) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, '0.0.0.0', () => {
+  const allowedOrigins = [
+    process.env.CLIENT_URL,
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://e-commerce-client-ecru.vercel.app'
+  ].filter(Boolean);
+
   console.log(`
 🚀 Server Status Summary:
 ──────────────────────────────────
@@ -401,14 +550,26 @@ app.listen(PORT, '0.0.0.0', () => {
 ✅ MongoDB: Connected
 ✅ Firebase Admin: Initialized
 ✅ Cloudinary: Configured
+✅ CORS: Enabled with dynamic origins
 ✅ Environment: ${process.env.NODE_ENV || 'development'}
-✅ CORS: Enabled for ${process.env.CLIENT_URL || 'http://localhost:3000'}
+
+🌐 CORS Configuration:
+   Allowed Origins: 
+   ${allowedOrigins.map(origin => `   - ${origin}`).join('\n')}
+   Credentials: Enabled
+   Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS
 
 📱 API Endpoints:
    Home: http://localhost:${PORT}/
    Health: http://localhost:${PORT}/health
    Status: http://localhost:${PORT}/api/status
+   CORS Test: http://localhost:${PORT}/api/cors-test
    API Base: http://localhost:${PORT}/api
+
+🔧 Test CORS from browser:
+   fetch('http://localhost:${PORT}/api/cors-test', { 
+     credentials: 'include' 
+   }).then(r => r.json()).then(console.log)
 
 🔐 Authentication:
    Firebase Auth: Ready
