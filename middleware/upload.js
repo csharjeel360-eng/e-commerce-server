@@ -1,12 +1,19 @@
-// middleware/upload.js - FIXED VERSION
-// Prevent duplicate loading with singleton pattern
-if (!global.uploadMiddlewareInstance) {
-  // Move all requires inside the singleton check
+// middleware/upload.js - COMPLETELY FIXED VERSION
+// Enhanced singleton pattern with proper scoping
+
+(function() {
+  // Only initialize if not already exists
+  if (global.uploadMiddlewareInstance) {
+    console.log('✅ Using cached upload middleware instance');
+    return;
+  }
+
+  console.log('🔄 Initializing upload middleware for the first time...');
+
+  // Load dependencies inside IIFE to prevent redeclaration errors
   const multer = require('multer');
   const cloudinary = require('../config/cloudinary');
   const { Readable } = require('stream');
-
-  console.log('🔄 Initializing upload middleware...');
 
   let multerInstance = null;
   let adapterAvailable = false;
@@ -43,7 +50,7 @@ if (!global.uploadMiddlewareInstance) {
       console.log('✅ Using multer-storage-cloudinary adapter');
     }
   } catch (e) {
-    console.log('ℹ️ multer-storage-cloudinary not available, using fallback');
+    console.log('ℹ️ multer-storage-cloudinary not available, using fallback:', e.message);
   }
 
   // Fallback: memory storage + direct Cloudinary upload
@@ -87,7 +94,7 @@ if (!global.uploadMiddlewareInstance) {
     });
   }
 
-  // Create middleware functions based on adapter availability
+  // Create the singleton instance
   if (adapterAvailable) {
     // Using multer-storage-cloudinary adapter
     global.uploadMiddlewareInstance = {
@@ -234,7 +241,7 @@ if (!global.uploadMiddlewareInstance) {
       }
     };
   }
-}
+})();
 
-// Export the singleton instance FIX IT
+// Export the singleton instance
 module.exports = global.uploadMiddlewareInstance;
