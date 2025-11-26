@@ -236,5 +236,5 @@ if (!global.uploadMiddlewareInstance) {
   }
 }
 
-// Export the singleton instance
+// Export the singleton instance FIX IT
 module.exports = global.uploadMiddlewareInstance;
