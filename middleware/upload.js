@@ -1,35 +1,82 @@
-// middleware/upload.js - ENHANCED & FIXED VERSION
-// Using memory storage with direct Cloudinary upload (most reliable approach)
+// middleware/upload.js - COMPLETE & FIXED VERSION
+// Using memory storage with direct Cloudinary upload
 
 const multer = require('multer');
 const { Readable } = require('stream');
 
-// Initialize cloudinary with comprehensive error handling
+// =============================================
+// CLOUDINARY CONFIGURATION & AVAILABILITY CHECK
+// =============================================
+
 let cloudinary;
 let cloudinaryAvailable = false;
+let cloudinaryConfig = {};
+
+console.log('🔧 ========== UPLOAD MIDDLEWARE INITIALIZATION ==========');
 
 try {
   cloudinary = require('../config/cloudinary');
   
-  // Check if cloudinary is properly configured
-  if (cloudinary && cloudinary.uploader && typeof cloudinary.uploader.upload_stream === 'function') {
-    cloudinaryAvailable = true;
-    console.log('✅ Cloudinary loaded and configured successfully');
+  // Enhanced availability check
+  if (cloudinary && 
+      cloudinary.config && 
+      typeof cloudinary.config === 'function' &&
+      cloudinary.uploader && 
+      typeof cloudinary.uploader.upload_stream === 'function') {
     
-    // Test Cloudinary connection
-    cloudinary.api.ping()
-      .then(() => console.log('✅ Cloudinary connection test passed'))
-      .catch(error => console.error('❌ Cloudinary connection test failed:', error.message));
+    // Test if configuration is actually set
+    const config = cloudinary.config();
+    if (config && config.cloud_name && config.api_key && config.api_secret) {
+      cloudinaryAvailable = true;
+      cloudinaryConfig = config;
       
+      console.log('✅ Cloudinary loaded and configured successfully');
+      console.log('   Cloud Name:', config.cloud_name);
+      console.log('   API Key:', config.api_key ? '***' + config.api_key.slice(-4) : 'MISSING');
+      console.log('   Secure:', config.secure);
+      
+      // Test Cloudinary connection
+      cloudinary.api.ping()
+        .then((result) => {
+          console.log('✅ Cloudinary connection test passed');
+          console.log('   Status:', result.status);
+        })
+        .catch(error => {
+          console.error('❌ Cloudinary connection test failed:');
+          console.error('   Message:', error.message);
+          console.error('   HTTP Code:', error.http_code);
+          cloudinaryAvailable = false;
+        });
+        
+    } else {
+      console.error('❌ Cloudinary loaded but configuration is incomplete:');
+      console.error('   Cloud Name:', config?.cloud_name || 'MISSING');
+      console.error('   API Key:', config?.api_key ? '***' + config.api_key.slice(-4) : 'MISSING');
+      console.error('   API Secret:', config?.api_secret ? '***' + config.api_secret.slice(-4) : 'MISSING');
+      cloudinaryAvailable = false;
+    }
   } else {
-    console.error('❌ Cloudinary loaded but uploader is not available');
+    console.error('❌ Cloudinary loaded but required methods are missing:');
+    console.error('   - cloudinary exists:', !!cloudinary);
+    console.error('   - cloudinary.config function:', !!(cloudinary && cloudinary.config && typeof cloudinary.config === 'function'));
+    console.error('   - cloudinary.uploader exists:', !!(cloudinary && cloudinary.uploader));
+    console.error('   - upload_stream function:', !!(cloudinary && cloudinary.uploader && typeof cloudinary.uploader.upload_stream === 'function'));
     cloudinaryAvailable = false;
   }
 } catch (error) {
-  console.error('❌ Failed to load Cloudinary:', error.message);
+  console.error('❌ Failed to load Cloudinary configuration:');
+  console.error('   Error:', error.message);
+  console.error('   Stack:', error.stack);
   console.error('💡 Please check your Cloudinary configuration in config/cloudinary.js');
   cloudinaryAvailable = false;
 }
+
+console.log('🔧 Cloudinary Available:', cloudinaryAvailable);
+console.log('🔧 ========== INITIALIZATION COMPLETE ==========');
+
+// =============================================
+// MULTER CONFIGURATION
+// =============================================
 
 // Create memory storage (most reliable)
 const storage = multer.memoryStorage();
@@ -44,7 +91,7 @@ const fileFilter = (req, file, cb) => {
 
     // Check if file is an image
     if (file.mimetype.startsWith('image/')) {
-      const allowedFormats = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      const allowedFormats = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/jpg'];
       
       if (allowedFormats.includes(file.mimetype)) {
         console.log(`✅ Accepting file: ${file.originalname} (${file.mimetype})`);
@@ -103,11 +150,22 @@ multerInstance._handleError = (err, req, res, next) => {
   next(err);
 };
 
+// =============================================
+// CLOUDINARY UTILITY FUNCTIONS
+// =============================================
+
 // Enhanced Cloudinary upload function with retry mechanism
 const uploadToCloudinary = (buffer, options = {}) => {
   return new Promise((resolve, reject) => {
     if (!cloudinaryAvailable || !cloudinary || !cloudinary.uploader) {
-      return reject(new Error('Cloudinary upload service is not available. Please check configuration.'));
+      const error = new Error(
+        `Cloudinary upload service is not available. ` +
+        `Available: ${cloudinaryAvailable}, ` +
+        `Cloudinary: ${!!cloudinary}, ` +
+        `Uploader: ${!!(cloudinary && cloudinary.uploader)}`
+      );
+      error.code = 'SERVICE_UNAVAILABLE';
+      return reject(error);
     }
 
     const uploadOptions = {
@@ -121,6 +179,7 @@ const uploadToCloudinary = (buffer, options = {}) => {
     };
 
     console.log(`☁️ Uploading to Cloudinary folder: ${uploadOptions.folder}`);
+    console.log(`   Public ID: ${uploadOptions.public_id || 'auto-generated'}`);
 
     // Create upload stream with timeout
     const uploadStream = cloudinary.uploader.upload_stream(
@@ -132,7 +191,11 @@ const uploadToCloudinary = (buffer, options = {}) => {
             code: error.http_code,
             name: error.name
           });
-          reject(error);
+          
+          const enhancedError = new Error(`Cloudinary upload failed: ${error.message}`);
+          enhancedError.http_code = error.http_code;
+          enhancedError.originalError = error;
+          reject(enhancedError);
         } else {
           console.log('✅ Cloudinary upload successful:', {
             public_id: result.public_id,
@@ -148,16 +211,33 @@ const uploadToCloudinary = (buffer, options = {}) => {
     // Handle stream errors
     uploadStream.on('error', (streamError) => {
       console.error('❌ Cloudinary stream error:', streamError);
-      reject(new Error('File upload stream failed'));
+      const enhancedError = new Error('File upload stream failed');
+      enhancedError.originalError = streamError;
+      reject(enhancedError);
     });
 
     // Convert buffer to stream and pipe to Cloudinary
     try {
       const readableStream = Readable.from(buffer);
       readableStream.pipe(uploadStream);
+      
+      // Handle stream completion
+      readableStream.on('end', () => {
+        console.log('📤 File stream completed successfully');
+      });
+      
+      readableStream.on('error', (streamError) => {
+        console.error('❌ Readable stream error:', streamError);
+        const enhancedError = new Error('Failed to create file stream');
+        enhancedError.originalError = streamError;
+        reject(enhancedError);
+      });
+      
     } catch (streamError) {
       console.error('❌ Stream creation error:', streamError);
-      reject(new Error('Failed to process file stream'));
+      const enhancedError = new Error('Failed to process file stream');
+      enhancedError.originalError = streamError;
+      reject(enhancedError);
     }
   });
 };
@@ -166,15 +246,32 @@ const uploadToCloudinary = (buffer, options = {}) => {
 const generatePublicId = (prefix = 'img', originalName = '') => {
   const timestamp = Date.now();
   const randomString = Math.random().toString(36).substring(2, 15);
-  const safeName = originalName ? originalName.split('.')[0].replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20) : '';
+  const safeName = originalName ? 
+    originalName.split('.')[0].replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20) : '';
   return `${prefix}_${safeName}_${timestamp}_${randomString}`.toLowerCase();
 };
+
+// Get Cloudinary status
+const getCloudinaryStatus = () => {
+  return {
+    available: cloudinaryAvailable,
+    configured: !!cloudinary,
+    cloudName: cloudinary?.config()?.cloud_name || 'Not configured',
+    hasUploader: !!(cloudinary && cloudinary.uploader),
+    config: cloudinaryConfig
+  };
+};
+
+// =============================================
+// UPLOAD MIDDLEWARE FUNCTIONS
+// =============================================
 
 // Enhanced single file upload middleware
 const singleUpload = (fieldName) => {
   return (req, res, next) => {
     console.log(`📤 Starting single file upload for field: "${fieldName}"`);
     console.log(`👤 User: ${req.user?.email || 'Unknown'}`);
+    console.log(`🔧 Cloudinary Available: ${cloudinaryAvailable}`);
     
     multerInstance.single(fieldName)(req, res, async (err) => {
       if (err) {
@@ -192,13 +289,19 @@ const singleUpload = (fieldName) => {
 
       // Check Cloudinary availability
       if (!cloudinaryAvailable) {
-        const error = new Error('Cloudinary service is not available. Please try again later.');
+        const status = getCloudinaryStatus();
+        const error = new Error(
+          `Cloudinary service is not available. Status: ${JSON.stringify(status)}`
+        );
         error.code = 'SERVICE_UNAVAILABLE';
+        error.details = status;
         return next(error);
       }
 
       try {
         const publicId = generatePublicId('img', req.file.originalname);
+        
+        console.log(`🔄 Uploading to Cloudinary: ${publicId}`);
         
         // Upload to Cloudinary
         const result = await uploadToCloudinary(req.file.buffer, {
@@ -233,13 +336,18 @@ const singleUpload = (fieldName) => {
         console.error('❌ Cloudinary upload failed:', {
           message: uploadError.message,
           file: req.file.originalname,
-          size: req.file.size
+          size: req.file.size,
+          code: uploadError.code
         });
         
         // Enhance error message for better client handling
         const enhancedError = new Error(`Upload failed: ${uploadError.message}`);
         enhancedError.code = uploadError.http_code ? `CLOUDINARY_${uploadError.http_code}` : 'UPLOAD_FAILED';
         enhancedError.originalError = uploadError;
+        enhancedError.details = {
+          file: req.file.originalname,
+          size: req.file.size
+        };
         
         next(enhancedError);
       }
@@ -252,6 +360,7 @@ const arrayUpload = (fieldName, maxCount = 5) => {
   return (req, res, next) => {
     console.log(`📤 Starting multiple files upload for field: "${fieldName}" (max: ${maxCount})`);
     console.log(`👤 User: ${req.user?.email || 'Unknown'}`);
+    console.log(`🔧 Cloudinary Available: ${cloudinaryAvailable}`);
     
     multerInstance.array(fieldName, maxCount)(req, res, async (err) => {
       if (err) {
@@ -269,8 +378,12 @@ const arrayUpload = (fieldName, maxCount = 5) => {
 
       // Check Cloudinary availability
       if (!cloudinaryAvailable) {
-        const error = new Error('Cloudinary service is not available. Please try again later.');
+        const status = getCloudinaryStatus();
+        const error = new Error(
+          `Cloudinary service is not available. Status: ${JSON.stringify(status)}`
+        );
         error.code = 'SERVICE_UNAVAILABLE';
+        error.details = status;
         return next(error);
       }
 
@@ -313,12 +426,16 @@ const arrayUpload = (fieldName, maxCount = 5) => {
       } catch (uploadError) {
         console.error('❌ Cloudinary upload failed:', {
           message: uploadError.message,
-          fileCount: req.files.length
+          fileCount: req.files.length,
+          code: uploadError.code
         });
         
         const enhancedError = new Error(`Multiple upload failed: ${uploadError.message}`);
         enhancedError.code = uploadError.http_code ? `CLOUDINARY_${uploadError.http_code}` : 'UPLOAD_FAILED';
         enhancedError.originalError = uploadError;
+        enhancedError.details = {
+          fileCount: req.files.length
+        };
         
         next(enhancedError);
       }
@@ -331,6 +448,7 @@ const fieldsUpload = (fields) => {
   return (req, res, next) => {
     console.log(`📤 Starting fields upload:`, fields.map(f => `${f.name} (max: ${f.maxCount})`));
     console.log(`👤 User: ${req.user?.email || 'Unknown'}`);
+    console.log(`🔧 Cloudinary Available: ${cloudinaryAvailable}`);
     
     multerInstance.fields(fields)(req, res, async (err) => {
       if (err) {
@@ -348,8 +466,12 @@ const fieldsUpload = (fields) => {
 
       // Check Cloudinary availability
       if (!cloudinaryAvailable) {
-        const error = new Error('Cloudinary service is not available. Please try again later.');
+        const status = getCloudinaryStatus();
+        const error = new Error(
+          `Cloudinary service is not available. Status: ${JSON.stringify(status)}`
+        );
         error.code = 'SERVICE_UNAVAILABLE';
+        error.details = status;
         return next(error);
       }
 
@@ -398,12 +520,16 @@ const fieldsUpload = (fields) => {
       } catch (uploadError) {
         console.error('❌ Cloudinary upload failed:', {
           message: uploadError.message,
-          fields: Object.keys(req.files)
+          fields: Object.keys(req.files),
+          code: uploadError.code
         });
         
         const enhancedError = new Error(`Fields upload failed: ${uploadError.message}`);
         enhancedError.code = uploadError.http_code ? `CLOUDINARY_${uploadError.http_code}` : 'UPLOAD_FAILED';
         enhancedError.originalError = uploadError;
+        enhancedError.details = {
+          fields: Object.keys(req.files)
+        };
         
         next(enhancedError);
       }
@@ -416,6 +542,7 @@ const anyUpload = () => {
   return (req, res, next) => {
     console.log(`📤 Starting any file upload`);
     console.log(`👤 User: ${req.user?.email || 'Unknown'}`);
+    console.log(`🔧 Cloudinary Available: ${cloudinaryAvailable}`);
     
     multerInstance.any()(req, res, async (err) => {
       if (err) {
@@ -432,8 +559,12 @@ const anyUpload = () => {
 
       // Check Cloudinary availability
       if (!cloudinaryAvailable) {
-        const error = new Error('Cloudinary service is not available. Please try again later.');
+        const status = getCloudinaryStatus();
+        const error = new Error(
+          `Cloudinary service is not available. Status: ${JSON.stringify(status)}`
+        );
         error.code = 'SERVICE_UNAVAILABLE';
+        error.details = status;
         return next(error);
       }
 
@@ -472,7 +603,10 @@ const anyUpload = () => {
         next();
 
       } catch (uploadError) {
-        console.error('❌ Cloudinary upload failed:', uploadError.message);
+        console.error('❌ Cloudinary upload failed:', {
+          message: uploadError.message,
+          code: uploadError.code
+        });
         
         const enhancedError = new Error(`Upload failed: ${uploadError.message}`);
         enhancedError.code = uploadError.http_code ? `CLOUDINARY_${uploadError.http_code}` : 'UPLOAD_FAILED';
@@ -484,17 +618,17 @@ const anyUpload = () => {
   };
 };
 
+// =============================================
+// UTILITY FUNCTIONS & EXPORTS
+// =============================================
+
 // Test endpoint to verify upload functionality
 const testUpload = (req, res) => {
   const status = {
     success: true,
     message: 'Upload middleware is working correctly',
     timestamp: new Date().toISOString(),
-    cloudinary: {
-      configured: !!cloudinary,
-      available: cloudinaryAvailable,
-      uploader_available: !!(cloudinary && cloudinary.uploader)
-    },
+    cloudinary: getCloudinaryStatus(),
     limits: {
       fileSize: '10MB',
       maxFiles: 10,
@@ -517,15 +651,33 @@ const healthCheck = (req, res) => {
     success: cloudinaryAvailable,
     service: 'file-upload',
     timestamp: new Date().toISOString(),
-    cloudinary: {
-      status: cloudinaryAvailable ? 'healthy' : 'unhealthy',
-      configured: !!cloudinary,
-      uploader_available: !!(cloudinary && cloudinary.uploader)
-    },
-    uptime: process.uptime()
+    cloudinary: getCloudinaryStatus(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage()
   };
 
   res.json(health);
+};
+
+// Debug endpoint for Cloudinary configuration
+const debugConfig = (req, res) => {
+  const debugInfo = {
+    timestamp: new Date().toISOString(),
+    nodeEnv: process.env.NODE_ENV,
+    cloudinaryEnvVars: {
+      CLOUDINARY_CLOUD_NAME: process.env.CLOUDINARY_CLOUD_NAME ? '***' + process.env.CLOUDINARY_CLOUD_NAME.slice(-4) : 'MISSING',
+      CLOUDINARY_API_KEY: process.env.CLOUDINARY_API_KEY ? '***' + process.env.CLOUDINARY_API_KEY.slice(-4) : 'MISSING',
+      CLOUDINARY_API_SECRET: process.env.CLOUDINARY_API_SECRET ? '***' + process.env.CLOUDINARY_API_SECRET.slice(-4) : 'MISSING',
+    },
+    cloudinaryConfig: getCloudinaryStatus(),
+    uploadMiddleware: {
+      cloudinaryAvailable: cloudinaryAvailable,
+      multerConfigured: !!multerInstance
+    }
+  };
+
+  console.log('🔍 Debug configuration requested:', debugInfo);
+  res.json(debugInfo);
 };
 
 // Export the upload middleware
@@ -537,6 +689,8 @@ module.exports = {
   multer: multerInstance,
   test: testUpload,
   health: healthCheck,
+  debug: debugConfig,
   uploadToCloudinary,
+  getCloudinaryStatus,
   isCloudinaryAvailable: () => cloudinaryAvailable
 };
