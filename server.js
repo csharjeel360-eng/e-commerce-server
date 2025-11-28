@@ -37,13 +37,11 @@ const corsOptions = {
     // Define allowed origins
     const allowedOrigins = [
       process.env.CLIENT_URL,
-      'http://localhost:3000',
+      
       'http://localhost:5173',
-      'https://localhost:3000',
-      'https://localhost:5173',
-      'https://e-commerce-client-ecru.vercel.app', // Your Vercel frontend
-      'https://*.vercel.app', // All Vercel preview deployments
-      'https://vercel.app' // Vercel main domain
+       
+      
+       
     ].filter(Boolean); // Remove any undefined/null values
 
     // Log CORS check for debugging
@@ -108,9 +106,9 @@ app.use((req, res, next) => {
   const requestOrigin = req.headers.origin;
   const allowedOrigins = [
     process.env.CLIENT_URL,
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'https://e-commerce-client-ecru.vercel.app'
+     
+    'http://localhost:5173'
+    
   ].filter(Boolean);
 
   // Set CORS headers dynamically
@@ -184,9 +182,9 @@ app.get('/api/cors-test', (req, res) => {
 app.get('/', (req, res) => {
   const allowedOrigins = [
     process.env.CLIENT_URL,
-    'http://localhost:3000',
+    
     'http://localhost:5173',
-    'https://e-commerce-client-ecru.vercel.app'
+     
   ].filter(Boolean);
 
   res.json({ 
@@ -364,9 +362,9 @@ app.use((error, req, res, next) => {
   if (error.message && error.message.includes('CORS')) {
     const allowedOrigins = [
       process.env.CLIENT_URL,
-      'http://localhost:3000',
+       
       'http://localhost:5173',
-      'https://e-commerce-client-ecru.vercel.app'
+     
     ].filter(Boolean);
 
     return res.status(403).json({
@@ -538,9 +536,8 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   const allowedOrigins = [
     process.env.CLIENT_URL,
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'https://e-commerce-client-ecru.vercel.app'
+   
+    'http://localhost:5173', 
   ].filter(Boolean);
 
   console.log(`
