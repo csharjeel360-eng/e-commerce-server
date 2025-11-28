@@ -83,23 +83,33 @@ const initializeFirebaseAdmin = () => {
           clientEmail: credentialObj.clientEmail,
           privateKey: credentialObj.privateKey
         }),
-        databaseURL: `https://${credentialObj.projectId}.firebaseio.com`,
-        storageBucket: `${credentialObj.projectId}.appspot.com`
+        databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${credentialObj.projectId}.firebaseio.com`,
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || `${credentialObj.projectId}.appspot.com`
       });
 
       console.log('✅ Firebase Admin SDK initialized successfully');
 
-      // Test Firebase connection
-      admin.auth().listUsers(1, 1)
+      // Test Firebase connection with proper parameters
+      admin.auth().getUser('test')
         .then(() => console.log('✅ Firebase Auth connection verified'))
-        .catch(err => console.error('❌ Firebase Auth connection failed:', err));
+        .catch(error => {
+          // This is expected to fail with "user not found", but confirms connection works
+          if (error.code === 'auth/user-not-found') {
+            console.log('✅ Firebase Auth connection verified (test user not found - expected)');
+          } else {
+            console.error('❌ Firebase Auth connection failed:', error.message);
+          }
+        });
+    } else {
+      console.log('✅ Firebase Admin SDK already initialized');
     }
 
     return admin;
   } catch (error) {
-    console.error('❌ Firebase Admin SDK initialization error:', error.message || error);
-    if (error.stack) console.error(error.stack.split('\n').slice(0,5).join('\n'));
-    throw error;
+    console.error('❌ Firebase Admin SDK initialization error:', error.message);
+    // Don't throw error to prevent server crash, just log it
+    console.log('⚠️  Continuing without Firebase Admin (some features may not work)');
+    return admin;
   }
 };
 
