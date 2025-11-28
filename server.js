@@ -15,7 +15,7 @@ const bannerRoutes = require('./routes/banners');
 const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
 const cartRoutes = require('./routes/cart');
-const userRoutes = require('./routes/users'); // Added user routes
+const userRoutes = require('./routes/users');
 
 const app = express();
 
@@ -25,8 +25,8 @@ connectDB();
 // Initialize Firebase Admin
 initializeFirebaseAdmin();
 
-// CORS configuration
-const corsOptions = {
+// IMPORTANT: Apply CORS as the very first middleware
+app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
@@ -38,44 +38,69 @@ const corsOptions = {
       'https://yourdomain.com' // Add your production domain
     ];
     
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+    // Allow all localhost origins and specified domains
+    if (origin.includes('localhost') || allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
       callback(null, true);
     } else {
+      console.log('CORS blocked for origin:', origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200
-};
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token']
+}));
+
+// Handle preflight requests globally
+app.options('*', cors());
 
 // Security middleware
-app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Add security headers
+// Add security headers with CORS
 app.use((req, res, next) => {
   // Remove sensitive headers
   res.removeHeader('X-Powered-By');
   
+  // CORS headers (in addition to cors middleware)
+  const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', process.env.CLIENT_URL];
+  const origin = req.headers.origin;
+  
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  
   // Security headers
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-auth-token');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   
-  // CSP header
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;"
-  );
+  // Only set HSTS in production
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
   
   next();
 });
 
-// Request logging middleware
+// Enhanced request logging middleware
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl} - IP: ${req.ip}`);
+  console.log(`\n🌐 ${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+  console.log(`📍 IP: ${req.ip} | Origin: ${req.headers.origin || 'No Origin'}`);
+  
+  // Log request body (excluding sensitive fields)
+  if (req.body && Object.keys(req.body).length > 0) {
+    const logBody = { ...req.body };
+    if (logBody.password) logBody.password = '***';
+    if (logBody.token) logBody.token = '***';
+    if (logBody.refreshToken) logBody.refreshToken = '***';
+    console.log('📦 Request Body:', logBody);
+  }
+  
   next();
 });
 
@@ -88,7 +113,7 @@ app.use('/api/banners', bannerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/cart', cartRoutes);
-app.use('/api/users', userRoutes); // Added user routes
+app.use('/api/users', userRoutes);
 
 // Home route
 app.get('/', (req, res) => {
@@ -218,14 +243,20 @@ app.use('*', (req, res) => {
 
 // Enhanced error handling middleware
 app.use((error, req, res, next) => {
-  console.error('🚨 Error Details:', {
-    message: error.message,
-    stack: error.stack,
-    url: req.originalUrl,
-    method: req.method,
-    ip: req.ip,
-    timestamp: new Date().toISOString()
-  });
+  console.error('\n🚨 ERROR DETAILS:');
+  console.error('Message:', error.message);
+  console.error('URL:', req.method, req.originalUrl);
+  console.error('Stack:', error.stack);
+  console.error('Timestamp:', new Date().toISOString());
+
+  // Ensure CORS headers are set even on errors
+  const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', process.env.CLIENT_URL];
+  const origin = req.headers.origin;
+  
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   // Mongoose validation error
   if (error.name === 'ValidationError') {
@@ -259,84 +290,6 @@ app.use((error, req, res, next) => {
     });
   }
   
-  // Multer file upload errors
-  if (error.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({
-      success: false,
-      message: 'File too large. Maximum size is 10MB.',
-      code: 'FILE_TOO_LARGE'
-    });
-  }
-  
-  if (error.code === 'LIMIT_FILE_COUNT') {
-    return res.status(400).json({
-      success: false,
-      message: 'Too many files uploaded. Maximum is 5 files.',
-      code: 'TOO_MANY_FILES'
-    });
-  }
-  
-  if (error.code === 'LIMIT_UNEXPECTED_FILE') {
-    return res.status(400).json({
-      success: false,
-      message: 'Unexpected field in file upload.',
-      code: 'UNEXPECTED_FIELD'
-    });
-  }
-  
-  // Cloudinary errors
-  if (error.message && error.message.includes('Cloudinary')) {
-    return res.status(500).json({
-      success: false,
-      message: 'Image upload service error. Please try again.',
-      code: 'CLOUDINARY_ERROR'
-    });
-  }
-  
-  // Firebase errors
-  if (error.message && error.message.includes('Firebase')) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication service error',
-      code: 'FIREBASE_ERROR'
-    });
-  }
-  
-  // JWT errors
-  if (error.name === 'JsonWebTokenError') {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid authentication token',
-      code: 'INVALID_TOKEN'
-    });
-  }
-  
-  if (error.name === 'TokenExpiredError') {
-    return res.status(401).json({
-      success: false,
-      message: 'Authentication token expired',
-      code: 'TOKEN_EXPIRED'
-    });
-  }
-
-  // CORS errors
-  if (error.message === 'Not allowed by CORS') {
-    return res.status(403).json({
-      success: false,
-      message: 'CORS policy: Origin not allowed',
-      code: 'CORS_ERROR'
-    });
-  }
-  
-  // Rate limiting errors
-  if (error.status === 429) {
-    return res.status(429).json({
-      success: false,
-      message: 'Too many requests. Please try again later.',
-      code: 'RATE_LIMITED'
-    });
-  }
-
   // Default error response
   const statusCode = error.status || error.statusCode || 500;
   const response = {
@@ -344,49 +297,11 @@ app.use((error, req, res, next) => {
     message: error.message || 'Internal server error',
     code: error.code || 'INTERNAL_ERROR',
     ...(process.env.NODE_ENV === 'development' && { 
-      stack: error.stack,
-      details: error.details 
+      stack: error.stack
     })
   };
 
-  // Log unexpected errors for monitoring
-  if (statusCode === 500) {
-    console.error('💥 Unexpected Server Error:', {
-      message: error.message,
-      stack: error.stack,
-      url: req.originalUrl,
-      body: req.body,
-      query: req.query,
-      timestamp: new Date().toISOString()
-    });
-  }
-
   res.status(statusCode).json(response);
-});
-
-// Graceful shutdown handling
-process.on('SIGINT', () => {
-  console.log('🛑 Received SIGINT. Shutting down gracefully...');
-  process.exit(0);
-});
-
-process.on('SIGTERM', () => {
-  console.log('🛑 Received SIGTERM. Shutting down gracefully...');
-  process.exit(0);
-});
-
-// Unhandled promise rejection handler
-process.on('unhandledRejection', (err, promise) => {
-  console.error('💥 Unhandled Promise Rejection:', err);
-  console.error('At promise:', promise);
-  // Close server & exit process
-  process.exit(1);
-});
-
-// Uncaught exception handler
-process.on('uncaughtException', (err) => {
-  console.error('💥 Uncaught Exception:', err);
-  process.exit(1);
 });
 
 const PORT = process.env.PORT || 5000;
@@ -396,27 +311,18 @@ app.listen(PORT, '0.0.0.0', () => {
 🚀 Server Status Summary:
 ──────────────────────────────────
 ✅ Server running on port: ${PORT}
-✅ MongoDB: Connected
-✅ Firebase Admin: Initialized
-✅ Cloudinary: Configured
 ✅ Environment: ${process.env.NODE_ENV || 'development'}
-✅ CORS: Enabled for ${process.env.CLIENT_URL || 'http://localhost:3000'}
+✅ CORS: Enabled for localhost:5173
 
 📱 API Endpoints:
    Home: http://localhost:${PORT}/
    Health: http://localhost:${PORT}/health
    Status: http://localhost:${PORT}/api/status
-   API Base: http://localhost:${PORT}/api
 
-🔐 Authentication:
-   Firebase Auth: Ready
-   Admin Login: /api/auth/admin/login
-   User Auth: /api/auth/firebase
-
-☁️  Services:
-   File Storage: Cloudinary Active
-   Database: MongoDB Connected
-   Auth Provider: Firebase Initialized
+🔧 Debug Tips:
+   Check /health endpoint for service status
+   Check browser console for CORS details
+   Check server logs for 500 errors
 ──────────────────────────────────
   `);
 });
