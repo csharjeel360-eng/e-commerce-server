@@ -62,6 +62,21 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// Get listing by slug (compatibility)
+router.get('/slug/:slug', async (req, res) => {
+  try {
+    const product = await Product.findOne({ slug: req.params.slug, isActive: true })
+      .populate('category', 'name')
+      .populate('createdBy', 'name')
+      .populate('reviews.user', 'name');
+
+    if (product) return res.json(product);
+    return res.status(404).json({ message: 'Listing not found' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Create listing (Admin only) - kept for backward compatibility; admin routes handle advanced creation
 router.post('/', protect, admin, upload.array('images', 10), async (req, res) => {
   try {
@@ -270,7 +285,35 @@ router.get('/featured/products', async (req, res) => {
       .limit(8)
       .sort({ createdAt: -1 });
 
-    res.json(products);
+    res.json({ products });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Compatibility: GET /listings/featured
+router.get('/featured', async (req, res) => {
+  try {
+    const products = await Product.find({ featured: true, isActive: true })
+      .populate('category', 'name')
+      .populate('createdBy', 'name')
+      .limit(12)
+      .sort({ createdAt: -1 });
+    res.json({ products });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Compatibility: GET /listings/popular
+router.get('/popular', async (req, res) => {
+  try {
+    const products = await Product.find({ isActive: true })
+      .populate('category', 'name')
+      .populate('createdBy', 'name')
+      .limit(12)
+      .sort({ buyClicks: -1, views: -1 });
+    res.json({ products });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -291,6 +334,61 @@ router.get('/category/:categoryId', async (req, res) => {
       .sort({ createdAt: -1 });
 
     res.json({ products, page, pages: Math.ceil(count / pageSize), total: count });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Search listings (compatibility) - expects query param `q`
+router.get('/search', async (req, res) => {
+  try {
+    const q = req.query.q || req.query.keyword || '';
+    const pageSize = Number(req.query.pageSize) || 10;
+    const page = Number(req.query.pageNumber) || 1;
+
+    const keyword = q ? { title: { $regex: q, $options: 'i' } } : {};
+    const count = await Product.countDocuments({ ...keyword, isActive: true });
+    const products = await Product.find({ ...keyword, isActive: true })
+      .populate('category', 'name')
+      .populate('createdBy', 'name')
+      .limit(pageSize)
+      .skip(pageSize * (page - 1))
+      .sort({ createdAt: -1 });
+
+    res.json({ products, page, pages: Math.ceil(count / pageSize), total: count });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get listings by tag
+router.get('/tag/:tag', async (req, res) => {
+  try {
+    const tag = req.params.tag;
+    const products = await Product.find({ tags: tag, isActive: true })
+      .populate('category', 'name')
+      .populate('createdBy', 'name')
+      .limit(20)
+      .sort({ createdAt: -1 });
+    res.json({ products });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get related listings
+router.get('/:id/related', async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: 'Invalid listing id' });
+  try {
+    const product = await Product.findById(req.params.id).select('category');
+    if (!product) return res.status(404).json({ message: 'Listing not found' });
+
+    const related = await Product.find({ category: product.category, _id: { $ne: req.params.id }, isActive: true })
+      .limit(8)
+      .populate('category', 'name')
+      .populate('createdBy', 'name');
+
+    res.json({ products: related });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
