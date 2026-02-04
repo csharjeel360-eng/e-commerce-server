@@ -41,10 +41,7 @@ const productSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  reviews: {
-    type: [mongoose.Schema.Types.Mixed],
-    default: []
-  },
+  reviews: [mongoose.Schema.Types.Mixed],
   averageRating: {
     type: Number,
     default: 0,
