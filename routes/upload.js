@@ -5,11 +5,13 @@ const { deleteFromCloudinary } = require('../middleware/uploadUtils');
 const router = express.Router();
 
 // Upload single image
-router.post('/image', protect, admin, upload.single('image'), async (req, res) => {
+router.post('/image', protect, admin, upload.single('file'), async (req, res) => {
   try {
     console.log('📤 POST /image - Upload request received');
     console.log('   Headers:', req.headers['content-type']);
     console.log('   User:', req.user?.email);
+    console.log('   File present:', !!req.file);
+    console.log('   File keys:', req.file ? Object.keys(req.file) : 'N/A');
 
     if (!req.file) {
       console.log('❌ No file in request');
@@ -489,6 +491,50 @@ router.all('*', (req, res) => {
       'GET /api/uploads/test',
       'GET /api/uploads/health'
     ]
+  });
+});
+
+// Error handling middleware for multer errors
+router.use((err, req, res, next) => {
+  console.error('❌ Upload route error:', {
+    message: err.message,
+    code: err.code,
+    name: err.name,
+    stack: err.stack?.substring(0, 200)
+  });
+
+  // Multer errors
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({
+      success: false,
+      message: 'File too large. Maximum size is 10MB.',
+      code: 'FILE_TOO_LARGE'
+    });
+  }
+  if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid field name. Expected "file" or "files".',
+      code: 'INVALID_FIELD'
+    });
+  }
+
+  // Cloudinary errors
+  if (err.message && err.message.includes('Cloudinary')) {
+    return res.status(503).json({
+      success: false,
+      message: 'Image upload service temporarily unavailable. Check your Cloudinary configuration.',
+      code: 'SERVICE_UNAVAILABLE',
+      error: err.message
+    });
+  }
+
+  // Generic server error
+  res.status(500).json({
+    success: false,
+    message: 'Upload processing failed',
+    error: err.message,
+    code: 'UPLOAD_ERROR'
   });
 });
 
