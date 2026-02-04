@@ -16,6 +16,7 @@ const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
 const cartRoutes = require('./routes/cart');
 const userRoutes = require('./routes/users');
+const trackingRoutes = require('./routes/tracking');
 
 const app = express();
 
@@ -121,6 +122,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/tracking', trackingRoutes);
 
 // Home route
 app.get('/', (req, res) => {
