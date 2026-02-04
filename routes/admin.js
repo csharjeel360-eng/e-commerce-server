@@ -312,7 +312,7 @@ router.post('/listings', protect, admin, async (req, res) => {
             category,
             images: Array.isArray(images) ? transformImages(images) : [], // Ensure images is always an array
             tags: Array.isArray(tags) ? tags.filter(t => t) : [],
-            reviews: [], // Initialize empty reviews
+            // DO NOT set reviews here - let schema handle it with default
             cartEnabled: cartEnabled !== undefined ? cartEnabled : (type === 'product'),
             status: status || 'draft',
             isFeatured: isFeatured || false,

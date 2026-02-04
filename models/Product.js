@@ -1,6 +1,7 @@
  const mongoose = require('mongoose');
 
- const reviewSchema = new mongoose.Schema({
+ // Simple review object without sub-schema to avoid discriminator issues
+ const reviewSchema = {
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -14,17 +15,20 @@
   },
   title: {
     type: String,
-    required: false, // Change to false if you want it optional
+    required: false,
     trim: true,
-    default: '' // Add default value
+    default: ''
   },
   comment: {
     type: String,
     required: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
   }
-}, {
-  timestamps: true
-});
+};
+
 const productSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -315,15 +319,4 @@ productSchema.methods.generateThumbnails = function() {
 productSchema.index({ createdBy: 1, createdAt: -1 });
 productSchema.index({ type: 1, isActive: 1 });
 
-let Product;
-try {
-  // Check if model already exists (for hot reload scenarios)
-  Product = mongoose.model('Product');
-  console.log('✅ Product model loaded from cache');
-} catch (err) {
-  // Model doesn't exist yet, create it
-  Product = mongoose.model('Product', productSchema);
-  console.log('✅ Product model created and registered');
-}
-
-module.exports = Product;
+module.exports = mongoose.model('Product', productSchema);
