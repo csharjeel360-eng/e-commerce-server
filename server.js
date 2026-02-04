@@ -10,7 +10,7 @@ const { initializeFirebaseAdmin } = require('./config/firebaseAdmin'); // Fireba
 const blogRoutes = require('./routes/blogs');
 const authRoutes = require('./routes/auth');
 const categoryRoutes = require('./routes/categories');
-const productRoutes = require('./routes/products');
+const listingsRoutes = require('./routes/listings');
 const bannerRoutes = require('./routes/banners');
 const adminRoutes = require('./routes/admin');
 const uploadRoutes = require('./routes/upload');
@@ -115,9 +115,8 @@ app.use((req, res, next) => {
 app.use('/api/blogs', blogRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
-app.use('/api/products', productRoutes);
-// Compatibility alias: mount product routes at /api/listings as well
-app.use('/api/listings', productRoutes);
+// Mount listings routes
+app.use('/api/listings', listingsRoutes);
 app.use('/api/banners', bannerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadRoutes);
