@@ -24,43 +24,43 @@ const transformImages = (images) => {
     
     console.log(`📷 Transforming ${images.length} images...`);
     
-    return images.map((img, index) => {
-      try {
-        // If already an object, return as-is
-        if (typeof img === 'object' && img.url && img.public_id) {
-          console.log(`   ✅ Image ${index + 1}: Already formatted`);
-          return img;
-        }
-        
-        // If it's a string URL, extract public_id from Cloudinary URL
-        if (typeof img === 'string') {
-          // Cloudinary URL format: https://res.cloudinary.com/{cloud_name}/image/upload/v{version}/{public_id}.{ext}
-          // Extract public_id from URL
-          const match = img.match(/\/upload\/(?:v\d+\/)?(.+?)\.[^.]+$/);
-          const public_id = match ? match[1] : img.split('/').pop().split('.')[0];
+    const transformed = images
+      .filter(img => img) // Remove null/undefined entries first
+      .map((img, index) => {
+        try {
+          // If already an object, return as-is
+          if (typeof img === 'object' && img.url && img.public_id) {
+            console.log(`   ✅ Image ${index + 1}: Already formatted`);
+            return img;
+          }
           
-          console.log(`   ✅ Image ${index + 1}: Extracted public_id = ${public_id}`);
+          // If it's a string URL, extract public_id from Cloudinary URL
+          if (typeof img === 'string' && img.trim()) {
+            // Cloudinary URL format: https://res.cloudinary.com/{cloud_name}/image/upload/v{version}/{public_id}.{ext}
+            // Extract public_id from URL
+            const match = img.match(/\/upload\/(?:v\d+\/)?(.+?)\.[^.]+$/);
+            const public_id = match ? match[1] : img.split('/').pop().split('.')[0];
+            
+            console.log(`   ✅ Image ${index + 1}: Extracted public_id = ${public_id}`);
+            
+            return {
+              url: img,
+              public_id: public_id
+            };
+          }
           
-          return {
-            url: img,
-            public_id: public_id
-          };
+          // Invalid image - return null to filter out
+          console.log(`   ⚠️  Image ${index + 1}: Invalid, will be filtered out`);
+          return null;
+        } catch (imgErr) {
+          console.error(`   ❌ Error transforming image ${index + 1}:`, imgErr.message);
+          return null;
         }
-        
-        // Fallback for edge cases
-        console.log(`   ⚠️  Image ${index + 1}: Using fallback transformation`);
-        return {
-          url: img.toString(),
-          public_id: `image-${Date.now()}-${index}`
-        };
-      } catch (imgErr) {
-        console.error(`   ❌ Error transforming image ${index + 1}:`, imgErr.message);
-        return {
-          url: img?.toString() || '',
-          public_id: `image-${Date.now()}-${index}`
-        };
-      }
-    });
+      })
+      .filter(img => img && img.url && img.public_id); // Remove null entries
+    
+    console.log(`📷 Transformed ${transformed.length} valid images`);
+    return transformed;
   } catch (err) {
     console.error('❌ Error in transformImages:', err.message);
     return [];
@@ -263,16 +263,16 @@ router.post('/listings', protect, admin, async (req, res) => {
         }
 
         const listingData = {
-            type,
-            title,
+            type: type || 'product',
+            title: title || '',
             slug,
-            description,
+            description: description || '',
             category,
-            images: transformImages(images), // Transform image URLs to proper objects
-            tags: tags || [],
+            images: Array.isArray(images) ? transformImages(images) : [], // Ensure images is always an array
+            tags: Array.isArray(tags) ? tags : [],
             cartEnabled: cartEnabled !== undefined ? cartEnabled : (type === 'product'),
-            status,
-            isFeatured,
+            status: status || 'draft',
+            isFeatured: isFeatured || false,
             metaTitle: metaTitle || title,
             metaDescription: metaDescription || description.substring(0, 160),
             views: 0,
@@ -322,19 +322,29 @@ router.post('/listings', protect, admin, async (req, res) => {
             stock: listingData.stock
         });
 
-        const listing = new Product(listingData);
-        await listing.save();
+        try {
+          const listing = new Product(listingData);
+          console.log('✅ Product instance created');
+          
+          await listing.save();
+          console.log('✅ Listing saved to database:', listing._id);
 
-        console.log('✅ Listing created successfully:', listing._id);
+          // Populate category before sending response
+          await listing.populate('category');
 
-        // Populate category before sending response
-        await listing.populate('category');
-
-        res.status(201).json({
-            success: true,
-            data: listing,
-            message: 'Listing created successfully'
-        });
+          res.status(201).json({
+              success: true,
+              data: listing,
+              message: 'Listing created successfully'
+          });
+        } catch (modelErr) {
+          console.error('❌ Error in model operations:', {
+            message: modelErr.message,
+            name: modelErr.name,
+            stack: modelErr.stack.substring(0, 300)
+          });
+          throw modelErr;
+        }
     } catch (err) {
         console.error('❌ Error creating listing:', {
             message: err.message,
