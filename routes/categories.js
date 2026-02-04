@@ -9,18 +9,34 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { type } = req.query;
-    const filter = { isActive: true };
+    let filter = { isActive: true };
     
     // Filter by type if provided
+    // Include categories with matching type OR categories without a type field (for backwards compatibility)
     if (type) {
-      filter.type = type;
+      filter = {
+        isActive: true,
+        $or: [
+          { type: type },
+          { type: { $exists: false } } // Include old categories without type
+        ]
+      };
+      
+      // Special case: if product type is requested, include type-less categories
+      if (type === 'product') {
+        // Already handled above
+      }
     }
     
     const categories = await Category.find(filter)
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
+    
+    console.log(`Categories request - type: ${type || 'all'}, found: ${categories.length}`);
+    
     res.json(categories);
   } catch (error) {
+    console.error('Error fetching categories:', error);
     res.status(500).json({ message: error.message });
   }
 });
@@ -135,6 +151,27 @@ router.delete('/:id', protect, admin, async (req, res) => {
       res.status(404).json({ message: 'Category not found' });
     }
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// ADMIN - Migrate categories to add type field (for backwards compatibility)
+router.post('/admin/migrate-types', protect, admin, async (req, res) => {
+  try {
+    // Find all categories without a type field and add default type 'product'
+    const result = await Category.updateMany(
+      { type: { $exists: false } },
+      { $set: { type: 'product' } }
+    );
+    
+    console.log(`Migrated ${result.modifiedCount} categories to have type 'product'`);
+    
+    res.json({
+      message: 'Migration completed',
+      migratedCount: result.modifiedCount
+    });
+  } catch (error) {
+    console.error('Migration error:', error);
     res.status(500).json({ message: error.message });
   }
 });
