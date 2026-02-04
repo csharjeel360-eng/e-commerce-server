@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Product = require('../models/Product');
 const Category = require('../models/Category');
@@ -243,6 +244,38 @@ router.post('/listings', protect, admin, async (req, res) => {
             isFeatured = false
         } = req.body;
 
+        // -----------------------------
+        // Input sanitization & coercion
+        // -----------------------------
+        const listingType = (type || 'product').toString();
+
+        // Validate category ObjectId early
+        if (!category || !mongoose.Types.ObjectId.isValid(category)) {
+            return res.status(400).json({ success: false, error: 'Invalid or missing category id' });
+        }
+
+        // Coerce numeric fields if provided as strings
+        const parsedPrice = (price !== undefined && price !== '') ? Number(price) : undefined;
+        const parsedStock = (stock !== undefined && stock !== '') ? parseInt(stock, 10) : undefined;
+
+        // If listing is a product, ensure price and stock are present and numeric
+        if (listingType === 'product') {
+            if (parsedPrice === undefined || Number.isNaN(parsedPrice)) {
+                return res.status(400).json({ success: false, error: 'Price is required and must be a number for product listings' });
+            }
+            if (parsedStock === undefined || Number.isNaN(parsedStock)) {
+                return res.status(400).json({ success: false, error: 'Stock is required and must be an integer for product listings' });
+            }
+        }
+
+        // Normalize jobType: null when empty, and validate allowed values
+        const JOB_TYPES = ['full-time', 'part-time', 'contract', 'freelance', 'internship'];
+        let normalizedJobType = null;
+        if (listingType === 'job') {
+            if (jobType && JOB_TYPES.includes(jobType)) normalizedJobType = jobType;
+            else normalizedJobType = null; // sanitize invalid/empty jobType
+        }
+
         // Validate required fields
         if (!title || !description || !category) {
             return res.status(400).json({
@@ -318,29 +351,29 @@ router.post('/listings', protect, admin, async (req, res) => {
         };
 
         // Add type-specific fields
-        if (type === 'product') {
-            listingData.price = parseFloat(price) || 0; // Ensure price is a number
-            listingData.stock = parseInt(stock) || 0; // Ensure stock is a number
-            listingData.originalPrice = parseFloat(req.body.originalPrice) || parseFloat(price) || 0;
+        if (listingType === 'product') {
+            listingData.price = parsedPrice; // numeric and already validated
+            listingData.stock = parsedStock; // numeric and already validated
+            listingData.originalPrice = (req.body.originalPrice !== undefined && req.body.originalPrice !== '') ? parseFloat(req.body.originalPrice) : parsedPrice;
             listingData.productLink = (externalLink && externalLink.trim()) || 'https://example.com'; // Use externalLink for productLink
         }
 
-        if (type === 'tool' || type === 'job') {
+        if (listingType === 'tool' || listingType === 'job') {
             listingData.externalLink = externalLink;
             listingData.affiliateSource = affiliateSource;
             listingData.affiliateId = affiliateId;
             listingData.productLink = (externalLink && externalLink.trim()) || 'https://example.com'; // Set productLink for compatibility
         }
 
-        if (type === 'tool') {
+        if (listingType === 'tool') {
             listingData.platform = Array.isArray(platform) ? platform : [];
             listingData.features = Array.isArray(features) ? features : [];
             listingData.integrations = Array.isArray(integrations) ? integrations : [];
         }
 
-        if (type === 'job') {
+        if (listingType === 'job') {
             listingData.companyName = companyName || '';
-            listingData.jobType = jobType || null;
+            listingData.jobType = normalizedJobType;
             listingData.location = location || '';
             listingData.salary = salary || '';
             listingData.experienceLevel = experienceLevel || 'any';
