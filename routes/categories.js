@@ -8,7 +8,15 @@ const router = express.Router();
 // Get all categories
 router.get('/', async (req, res) => {
   try {
-    const categories = await Category.find({ isActive: true })
+    const { type } = req.query;
+    const filter = { isActive: true };
+    
+    // Filter by type if provided
+    if (type) {
+      filter.type = type;
+    }
+    
+    const categories = await Category.find(filter)
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
     res.json(categories);
@@ -20,15 +28,25 @@ router.get('/', async (req, res) => {
 // Create category (Admin only)
 router.post('/', protect, admin, upload.single('image'), async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, type = 'product' } = req.body;
     
     if (!req.file) {
       return res.status(400).json({ message: 'Image is required' });
     }
 
+    // Validate type
+    const validTypes = ['product', 'offer', 'job', 'software'];
+    if (!validTypes.includes(type)) {
+      if (req.file && req.file.filename) {
+        await deleteFromCloudinary(req.file.filename);
+      }
+      return res.status(400).json({ message: 'Invalid category type' });
+    }
+
     const category = new Category({
       name,
       description,
+      type,
       image: {
         url: req.file.path,
         public_id: req.file.filename
@@ -57,6 +75,18 @@ router.put('/:id', protect, admin, upload.single('image'), async (req, res) => {
       
       category.name = req.body.name || category.name;
       category.description = req.body.description || category.description;
+      
+      // Update type if provided
+      if (req.body.type) {
+        const validTypes = ['product', 'offer', 'job', 'software'];
+        if (!validTypes.includes(req.body.type)) {
+          if (req.file && req.file.filename) {
+            await deleteFromCloudinary(req.file.filename);
+          }
+          return res.status(400).json({ message: 'Invalid category type' });
+        }
+        category.type = req.body.type;
+      }
       
       if (req.file) {
         // Update image

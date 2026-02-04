@@ -4,12 +4,17 @@ const categorySchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    unique: true,
     trim: true
   },
   description: {
     type: String,
     required: true
+  },
+  type: {
+    type: String,
+    enum: ['product', 'offer', 'job', 'software'],
+    required: true,
+    default: 'product'
   },
   image: {
     url: {
@@ -33,5 +38,8 @@ const categorySchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Compound index for name and type to allow same name for different types
+categorySchema.index({ name: 1, type: 1 }, { unique: true });
 
 module.exports = mongoose.model('Category', categorySchema);
