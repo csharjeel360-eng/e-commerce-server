@@ -174,43 +174,35 @@ router.get('/listings/:id', protect, admin, async (req, res) => {
 });
 
 // Test endpoint - Create minimal product
-router.post('/listings/test', protect, admin, async (req, res) => {
+router.post('/listings/test-minimal', protect, admin, async (req, res) => {
     try {
-        console.log('🧪 TEST: Creating minimal product...');
+        console.log('🧪 TEST MINIMAL: Creating basic product...');
         
+        // Absolutely minimal data - only required fields
         const minimalData = {
-            title: 'Test Product',
-            description: 'Test Description',
-            category: req.body.category,
-            price: 99,
-            stock: 10,
-            productLink: 'https://example.com',
+            title: 'Test',
+            description: 'Test Desc',
+            category: req.body.category || '507f1f77bcf86cd799439011', // dummy ObjectId
+            price: 10,
+            stock: 1,
+            productLink: 'https://test.com',
             createdBy: req.user._id,
             type: 'product'
         };
 
-        console.log('🧪 TEST: Data:', minimalData);
+        console.log('🧪 Creating instance...');
         const product = new Product(minimalData);
-        console.log('🧪 TEST: Instance created');
         
+        console.log('🧪 Saving...');
         await product.save();
-        console.log('🧪 TEST: Saved successfully');
 
-        res.json({
-            success: true,
-            data: product,
-            message: 'Test product created'
-        });
+        res.json({ success: true, data: product, message: 'Test passed!' });
     } catch (err) {
-        console.error('🧪 TEST ERROR:', {
-            message: err.message,
-            name: err.name,
-            code: err.code,
-            stack: err.stack
-        });
-        res.status(500).json({
+        console.error('🧪 TEST FAILED:', err.message, err.stack);
+        res.status(500).json({ 
             success: false,
-            error: err.message
+            error: err.message,
+            stack: err.stack.substring(0, 200)
         });
     }
 });
@@ -365,39 +357,20 @@ router.post('/listings', protect, admin, async (req, res) => {
             stock: listingData.stock
         });
 
-        try {
-          console.log('🔧 Creating Product instance with data:', {
-            title: listingData.title,
-            description: listingData.description.substring(0, 50),
-            category: listingData.category,
-            type: listingData.type,
-            createdBy: listingData.createdBy
-          });
+        const listing = new Product(listingData);
+        console.log('✅ Product instance created successfully');
+        
+        await listing.save();
+        console.log('✅ Listing saved to database:', listing._id);
 
-          const listing = new Product(listingData);
-          console.log('✅ Product instance created successfully');
-          console.log('   Instance keys:', Object.keys(listing).slice(0, 10));
-          
-          await listing.save();
-          console.log('✅ Listing saved to database:', listing._id);
+        // Populate category before sending response
+        await listing.populate('category');
 
-          // Populate category before sending response
-          await listing.populate('category');
-
-          res.status(201).json({
-              success: true,
-              data: listing,
-              message: 'Listing created successfully'
-          });
-        } catch (modelErr) {
-          console.error('❌ Error in model operations:', {
-            message: modelErr.message,
-            name: modelErr.name,
-            code: modelErr.code,
-            stack: modelErr.stack.substring(0, 300)
-          });
-          throw modelErr;
-        }
+        res.status(201).json({
+            success: true,
+            data: listing,
+            message: 'Listing created successfully'
+        });
     } catch (err) {
         console.error('❌ Error creating listing:', {
             message: err.message,
@@ -406,7 +379,7 @@ router.post('/listings', protect, admin, async (req, res) => {
             path: err.path,
             value: err.value,
             errors: err.errors ? Object.keys(err.errors) : null,
-            stack: err.stack.substring(0, 300)
+            stack: err.stack ? err.stack.substring(0, 500) : 'No stack'
         });
 
         // Handle MongoDB validation errors
