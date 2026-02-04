@@ -11,21 +11,9 @@ router.get('/', async (req, res) => {
     const { type } = req.query;
     let filter = { isActive: true };
     
-    // Filter by type if provided
-    // Include categories with matching type OR categories without a type field (for backwards compatibility)
+    // STRICT FILTERING: Only return categories matching the requested type
     if (type) {
-      filter = {
-        isActive: true,
-        $or: [
-          { type: type },
-          { type: { $exists: false } } // Include old categories without type
-        ]
-      };
-      
-      // Special case: if product type is requested, include type-less categories
-      if (type === 'product') {
-        // Already handled above
-      }
+      filter.type = type;
     }
     
     const categories = await Category.find(filter)
