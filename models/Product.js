@@ -1,34 +1,5 @@
  const mongoose = require('mongoose');
 
- // Simple review object without sub-schema to avoid discriminator issues
- const reviewSchema = {
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  rating: {
-    type: Number,
-    required: true,
-    min: 1,
-    max: 5
-  },
-  title: {
-    type: String,
-    required: false,
-    trim: true,
-    default: ''
-  },
-  comment: {
-    type: String,
-    required: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
-};
-
 const productSchema = new mongoose.Schema({
   title: {
     type: String,
@@ -66,7 +37,7 @@ const productSchema = new mongoose.Schema({
     trim: true
   },
   reviews: {
-    type: [reviewSchema],
+    type: [mongoose.Schema.Types.Mixed],
     default: []
   },
   averageRating: {
@@ -285,15 +256,16 @@ productSchema.methods.calculateAverageRating = function() {
 
 productSchema.pre('save', function(next) {
   try {
-    // Only calculate if reviews exist
-    if (this.reviews && this.reviews.length > 0) {
-      this.calculateAverageRating();
+    // Calculate average rating if reviews exist
+    if (this.reviews && Array.isArray(this.reviews) && this.reviews.length > 0) {
+      const sum = this.reviews.reduce((acc, review) => acc + (review.rating || 0), 0);
+      this.averageRating = parseFloat((sum / this.reviews.length).toFixed(1));
     } else {
       this.averageRating = 0;
     }
   } catch (err) {
     console.error('Error in pre-save hook:', err.message);
-    // Continue anyway, don't block save
+    this.averageRating = 0;
   }
   next();
 });
