@@ -357,8 +357,10 @@ router.post('/listings', protect, admin, async (req, res) => {
             stock: listingData.stock
         });
 
+        console.log('🔧 Creating Product instance with data:', JSON.stringify(listingData).substring(0, 200));
         const listing = new Product(listingData);
         console.log('✅ Product instance created successfully');
+        console.log('🔧 Calling listing.save()...');
         
         await listing.save();
         console.log('✅ Listing saved to database:', listing._id);
@@ -379,8 +381,14 @@ router.post('/listings', protect, admin, async (req, res) => {
             path: err.path,
             value: err.value,
             errors: err.errors ? Object.keys(err.errors) : null,
-            stack: err.stack ? err.stack.substring(0, 500) : 'No stack'
+            fullError: err.toString(),
+            stack: err.stack ? err.stack.substring(0, 800) : 'No stack'
         });
+
+        // Log full error if it contains discriminatorKey
+        if (err.message && err.message.includes('discriminatorKey')) {
+            console.error('🔍 DISCRIMINATOR KEY ERROR DETECTED - Full error:', err);
+        }
 
         // Handle MongoDB validation errors
         if (err.name === 'ValidationError') {
