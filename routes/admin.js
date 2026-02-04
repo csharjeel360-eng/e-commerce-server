@@ -6,6 +6,45 @@ const HeroBanner = require('../models/HeroBanner');
 const { protect, admin } = require('../middleware/auth');
 const router = express.Router();
 
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Transform image URLs from frontend to proper image objects
+ * Frontend sends array of URL strings from Cloudinary
+ * Backend needs array of {url, public_id} objects
+ */
+const transformImages = (images) => {
+  if (!images || !Array.isArray(images)) return [];
+  
+  return images.map(img => {
+    // If already an object, return as-is
+    if (typeof img === 'object' && img.url && img.public_id) {
+      return img;
+    }
+    
+    // If it's a string URL, extract public_id from Cloudinary URL
+    if (typeof img === 'string') {
+      // Cloudinary URL format: https://res.cloudinary.com/{cloud_name}/image/upload/v{version}/{public_id}.{ext}
+      // Extract public_id from URL
+      const match = img.match(/\/upload\/(?:v\d+\/)?(.+?)\.[^.]+$/);
+      const public_id = match ? match[1] : img.split('/').pop().split('.')[0];
+      
+      return {
+        url: img,
+        public_id: public_id
+      };
+    }
+    
+    // Fallback for edge cases
+    return {
+      url: img.toString(),
+      public_id: 'unknown'
+    };
+  });
+};
+
 // Middleware to ensure fresh data and prevent caching for admin routes
 router.use((req, res, next) => {
     // Set cache headers to prevent caching of admin responses
@@ -194,7 +233,7 @@ router.post('/listings', protect, admin, async (req, res) => {
             slug,
             description,
             category,
-            images: images || [],
+            images: transformImages(images), // Transform image URLs to proper objects
             tags: tags || [],
             cartEnabled: cartEnabled !== undefined ? cartEnabled : (type === 'product'),
             status,
@@ -204,7 +243,8 @@ router.post('/listings', protect, admin, async (req, res) => {
             views: 0,
             clicks: 0,
             conversions: 0,
-            pricingType: pricingType || 'paid'
+            pricingType: pricingType || 'paid',
+            createdBy: req.user._id // Add the user who created the listing
         };
 
         // Add type-specific fields
@@ -212,12 +252,14 @@ router.post('/listings', protect, admin, async (req, res) => {
             listingData.price = price;
             listingData.stock = stock;
             listingData.originalPrice = req.body.originalPrice || price;
+            listingData.productLink = externalLink || '#'; // Use externalLink for productLink
         }
 
         if (type === 'tool' || type === 'job') {
             listingData.externalLink = externalLink;
             listingData.affiliateSource = affiliateSource;
             listingData.affiliateId = affiliateId;
+            listingData.productLink = externalLink || '#'; // Set productLink for compatibility
         }
 
         if (type === 'tool') {
@@ -294,7 +336,7 @@ router.put('/listings/:id', protect, admin, async (req, res) => {
         if (title) listing.title = title;
         if (description) listing.description = description;
         if (category) listing.category = category;
-        if (images) listing.images = images;
+        if (images) listing.images = transformImages(images); // Transform image URLs to proper objects
         if (tags) listing.tags = tags;
 
         // Update common fields
@@ -310,10 +352,14 @@ router.put('/listings/:id', protect, admin, async (req, res) => {
             if (price !== undefined) listing.price = price;
             if (stock !== undefined) listing.stock = stock;
             if (req.body.originalPrice !== undefined) listing.originalPrice = req.body.originalPrice;
+            if (externalLink) listing.productLink = externalLink; // Update productLink for products
         }
 
         if (type === 'tool' || type === 'job') {
-            if (externalLink) listing.externalLink = externalLink;
+            if (externalLink) {
+                listing.externalLink = externalLink;
+                listing.productLink = externalLink; // Update productLink for tools/jobs
+            }
             if (affiliateSource) listing.affiliateSource = affiliateSource;
             if (affiliateId) listing.affiliateId = affiliateId;
         }
