@@ -16,33 +16,55 @@ const router = express.Router();
  * Backend needs array of {url, public_id} objects
  */
 const transformImages = (images) => {
-  if (!images || !Array.isArray(images)) return [];
-  
-  return images.map(img => {
-    // If already an object, return as-is
-    if (typeof img === 'object' && img.url && img.public_id) {
-      return img;
+  try {
+    if (!images || !Array.isArray(images)) {
+      console.log('📷 No images provided or invalid format');
+      return [];
     }
     
-    // If it's a string URL, extract public_id from Cloudinary URL
-    if (typeof img === 'string') {
-      // Cloudinary URL format: https://res.cloudinary.com/{cloud_name}/image/upload/v{version}/{public_id}.{ext}
-      // Extract public_id from URL
-      const match = img.match(/\/upload\/(?:v\d+\/)?(.+?)\.[^.]+$/);
-      const public_id = match ? match[1] : img.split('/').pop().split('.')[0];
-      
-      return {
-        url: img,
-        public_id: public_id
-      };
-    }
+    console.log(`📷 Transforming ${images.length} images...`);
     
-    // Fallback for edge cases
-    return {
-      url: img.toString(),
-      public_id: 'unknown'
-    };
-  });
+    return images.map((img, index) => {
+      try {
+        // If already an object, return as-is
+        if (typeof img === 'object' && img.url && img.public_id) {
+          console.log(`   ✅ Image ${index + 1}: Already formatted`);
+          return img;
+        }
+        
+        // If it's a string URL, extract public_id from Cloudinary URL
+        if (typeof img === 'string') {
+          // Cloudinary URL format: https://res.cloudinary.com/{cloud_name}/image/upload/v{version}/{public_id}.{ext}
+          // Extract public_id from URL
+          const match = img.match(/\/upload\/(?:v\d+\/)?(.+?)\.[^.]+$/);
+          const public_id = match ? match[1] : img.split('/').pop().split('.')[0];
+          
+          console.log(`   ✅ Image ${index + 1}: Extracted public_id = ${public_id}`);
+          
+          return {
+            url: img,
+            public_id: public_id
+          };
+        }
+        
+        // Fallback for edge cases
+        console.log(`   ⚠️  Image ${index + 1}: Using fallback transformation`);
+        return {
+          url: img.toString(),
+          public_id: `image-${Date.now()}-${index}`
+        };
+      } catch (imgErr) {
+        console.error(`   ❌ Error transforming image ${index + 1}:`, imgErr.message);
+        return {
+          url: img?.toString() || '',
+          public_id: `image-${Date.now()}-${index}`
+        };
+      }
+    });
+  } catch (err) {
+    console.error('❌ Error in transformImages:', err.message);
+    return [];
+  }
 };
 
 // Middleware to ensure fresh data and prevent caching for admin routes
@@ -154,6 +176,10 @@ router.get('/listings/:id', protect, admin, async (req, res) => {
 // POST /api/admin/listings - Create new listing
 router.post('/listings', protect, admin, async (req, res) => {
     try {
+        console.log('📝 Creating new listing...');
+        console.log('   User ID:', req.user?._id);
+        console.log('   User Email:', req.user?.email);
+
         const {
             type,
             title,
@@ -227,6 +253,15 @@ router.post('/listings', protect, admin, async (req, res) => {
             .replace(/[\s_-]+/g, '-')
             .replace(/^-+|-+$/g, '');
 
+        // Validate and get user ID
+        if (!req.user || !req.user._id) {
+            console.error('❌ User not authenticated or user._id missing:', req.user);
+            return res.status(401).json({
+                success: false,
+                error: 'User authentication failed'
+            });
+        }
+
         const listingData = {
             type,
             title,
@@ -277,8 +312,18 @@ router.post('/listings', protect, admin, async (req, res) => {
             listingData.applicationDeadline = applicationDeadline;
         }
 
+        console.log('📋 Listing data prepared:', {
+            title,
+            type,
+            category,
+            createdBy: req.user._id,
+            imageCount: listingData.images.length
+        });
+
         const listing = new Product(listingData);
         await listing.save();
+
+        console.log('✅ Listing created successfully:', listing._id);
 
         // Populate category before sending response
         await listing.populate('category');
@@ -289,8 +334,19 @@ router.post('/listings', protect, admin, async (req, res) => {
             message: 'Listing created successfully'
         });
     } catch (err) {
-        console.error('Error creating listing:', err);
-        res.status(500).json({ success: false, error: 'Failed to create listing' });
+        console.error('❌ Error creating listing:', {
+            message: err.message,
+            code: err.code,
+            name: err.name,
+            path: err.path,
+            value: err.value,
+            stack: err.stack.substring(0, 300)
+        });
+        res.status(500).json({ 
+            success: false, 
+            error: err.message || 'Failed to create listing',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 });
 
