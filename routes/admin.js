@@ -264,17 +264,18 @@ router.post('/listings', protect, admin, async (req, res) => {
 
         const listingData = {
             type: type || 'product',
-            title: title || '',
+            title: (title || '').trim(),
             slug,
-            description: description || '',
+            description: (description || '').trim(),
             category,
             images: Array.isArray(images) ? transformImages(images) : [], // Ensure images is always an array
-            tags: Array.isArray(tags) ? tags : [],
+            tags: Array.isArray(tags) ? tags.filter(t => t) : [],
+            reviews: [], // Initialize empty reviews
             cartEnabled: cartEnabled !== undefined ? cartEnabled : (type === 'product'),
             status: status || 'draft',
             isFeatured: isFeatured || false,
-            metaTitle: metaTitle || title,
-            metaDescription: metaDescription || description.substring(0, 160),
+            metaTitle: (metaTitle || title || '').trim(),
+            metaDescription: (metaDescription || description || '').substring(0, 160).trim(),
             views: 0,
             clicks: 0,
             conversions: 0,
@@ -323,8 +324,17 @@ router.post('/listings', protect, admin, async (req, res) => {
         });
 
         try {
+          console.log('🔧 Creating Product instance with data:', {
+            title: listingData.title,
+            description: listingData.description.substring(0, 50),
+            category: listingData.category,
+            type: listingData.type,
+            createdBy: listingData.createdBy
+          });
+
           const listing = new Product(listingData);
-          console.log('✅ Product instance created');
+          console.log('✅ Product instance created successfully');
+          console.log('   Instance keys:', Object.keys(listing).slice(0, 10));
           
           await listing.save();
           console.log('✅ Listing saved to database:', listing._id);
@@ -341,6 +351,7 @@ router.post('/listings', protect, admin, async (req, res) => {
           console.error('❌ Error in model operations:', {
             message: modelErr.message,
             name: modelErr.name,
+            code: modelErr.code,
             stack: modelErr.stack.substring(0, 300)
           });
           throw modelErr;

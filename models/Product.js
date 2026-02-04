@@ -61,7 +61,10 @@ const productSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
-  reviews: [reviewSchema],
+  reviews: {
+    type: [reviewSchema],
+    default: []
+  },
   averageRating: {
     type: Number,
     default: 0,
@@ -277,7 +280,17 @@ productSchema.methods.calculateAverageRating = function() {
 };
 
 productSchema.pre('save', function(next) {
-  this.calculateAverageRating();
+  try {
+    // Only calculate if reviews exist
+    if (this.reviews && this.reviews.length > 0) {
+      this.calculateAverageRating();
+    } else {
+      this.averageRating = 0;
+    }
+  } catch (err) {
+    console.error('Error in pre-save hook:', err.message);
+    // Continue anyway, don't block save
+  }
   next();
 });
 
