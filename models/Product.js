@@ -237,7 +237,7 @@ const productSchema = new mongoose.Schema({
     default: []
   },
 
-  schema: {
+  schemaType: {
     type: String,
     enum: ['SoftwareApplication', 'JobPosting', 'Product', 'none'],
     default: 'none'
