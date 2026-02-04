@@ -327,6 +327,9 @@ blogSchema.methods.convertMarkdownToHtml = function(markdown) {
   
   let html = markdown;
 
+  // Color tags - must come FIRST before other formatting
+  html = html.replace(/\{color:(#[0-9A-Fa-f]{6}|[a-zA-Z]+)\}(.*?)\{\/color\}/g, '<span style="color: $1;">$2</span>');
+
   // Headers
   html = html.replace(/^# (.*$)/gim, '<h1 class="text-3xl font-bold my-6 text-gray-900">$1</h1>');
   html = html.replace(/^## (.*$)/gim, '<h2 class="text-2xl font-bold my-5 text-gray-800">$1</h2>');
@@ -376,7 +379,9 @@ blogSchema.methods.convertMarkdownToHtml = function(markdown) {
         processedLines.push('<ul class="list-disc ml-6 my-4 space-y-2">');
         inList = true;
       }
-      const content = line.substring(2);
+      let content = line.substring(2);
+      // Process color tags in list items
+      content = content.replace(/\{color:(#[0-9A-Fa-f]{6}|[a-zA-Z]+)\}(.*?)\{\/color\}/g, '<span style="color: $1;">$2</span>');
       processedLines.push(`<li class="text-gray-700">${content}</li>`);
       continue;
     }
@@ -387,7 +392,9 @@ blogSchema.methods.convertMarkdownToHtml = function(markdown) {
         processedLines.push('<ol class="list-decimal ml-6 my-4 space-y-2">');
         inOrderedList = true;
       }
-      const content = line.replace(/^\d+\. /, '');
+      let content = line.replace(/^\d+\. /, '');
+      // Process color tags in list items
+      content = content.replace(/\{color:(#[0-9A-Fa-f]{6}|[a-zA-Z]+)\}(.*?)\{\/color\}/g, '<span style="color: $1;">$2</span>');
       processedLines.push(`<li class="text-gray-700">${content}</li>`);
       continue;
     }
@@ -425,6 +432,7 @@ blogSchema.methods.convertMarkdownToHtml = function(markdown) {
     } 
     // Otherwise, wrap in paragraph if it's not empty
     else if (line && !line.startsWith('```')) {
+      // Color tags already processed at top level, but also process inline colors for paragraphs
       processedLines.push(`<p class="my-4 leading-relaxed text-gray-700">${line}</p>`);
     }
   }

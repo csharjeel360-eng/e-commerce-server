@@ -6,6 +6,19 @@ const HeroBanner = require('../models/HeroBanner');
 const { protect, admin } = require('../middleware/auth');
 const router = express.Router();
 
+// Middleware to ensure fresh data and prevent caching for admin routes
+router.use((req, res, next) => {
+    // Set cache headers to prevent caching of admin responses
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    // Add ETag header to force revalidation
+    res.setHeader('ETag', `"${Date.now()}"`);
+    
+    next();
+});
+
 // Get dashboard statistics
 router.get('/dashboard', protect, admin, async (req, res) => {
     try {

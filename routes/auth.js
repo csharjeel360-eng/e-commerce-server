@@ -6,6 +6,19 @@ const User = require('../models/User');
 const { protect } = require('../middleware/auth');
 const router = express.Router();
 
+// Middleware to ensure fresh auth responses - prevent caching
+router.use((req, res, next) => {
+  // Set cache headers to prevent caching of auth responses
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  
+  // Add timestamp to ETag to force revalidation
+  res.setHeader('ETag', `"${Date.now()}"`);
+  
+  next();
+});
+
 // @desc    Get current authenticated user
 // @route   GET /api/auth/me
 // @access  Protected (JWT)

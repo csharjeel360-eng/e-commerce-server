@@ -222,6 +222,11 @@ const protect = async (req, res, next) => {
         // Record successful authentication
         recordAuthAttempt(clientIP, true);
 
+        // Add response headers to prevent caching of authenticated responses
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
         next();
     } catch (error) {
         console.error('   💥 Authentication middleware error:', error);

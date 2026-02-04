@@ -79,6 +79,11 @@ app.use((req, res, next) => {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   
+  // Cache control for API responses - prevent caching to ensure fresh data
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  
   // Only set HSTS in production
   if (process.env.NODE_ENV === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -109,6 +114,8 @@ app.use('/api/blogs', blogRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
+// Compatibility alias: mount product routes at /api/listings as well
+app.use('/api/listings', productRoutes);
 app.use('/api/banners', bannerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/uploads', uploadRoutes);
@@ -132,6 +139,7 @@ app.get('/', (req, res) => {
       users: '/api/users',
       categories: '/api/categories',
       products: '/api/products',
+      listings: '/api/listings',
       banners: '/api/banners',
       blogs: '/api/blogs',
       admin: '/api/admin',
@@ -217,6 +225,10 @@ app.use('*', (req, res) => {
         'GET /api/products/:id - Get single product',
         'PUT /api/products/:id - Update product (admin)',
         'DELETE /api/products/:id - Delete product (admin)'
+      ],
+      listings: [
+        'GET /api/listings - Alias for products',
+        'GET /api/listings/:id - Alias for product detail'
       ],
       categories: [
         'GET /api/categories - Get all categories',
