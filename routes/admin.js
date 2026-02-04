@@ -284,9 +284,9 @@ router.post('/listings', protect, admin, async (req, res) => {
 
         // Add type-specific fields
         if (type === 'product') {
-            listingData.price = price;
-            listingData.stock = stock;
-            listingData.originalPrice = req.body.originalPrice || price;
+            listingData.price = parseFloat(price) || 0; // Ensure price is a number
+            listingData.stock = parseInt(stock) || 0; // Ensure stock is a number
+            listingData.originalPrice = parseFloat(req.body.originalPrice) || parseFloat(price) || 0;
             listingData.productLink = externalLink || '#'; // Use externalLink for productLink
         }
 
@@ -317,7 +317,9 @@ router.post('/listings', protect, admin, async (req, res) => {
             type,
             category,
             createdBy: req.user._id,
-            imageCount: listingData.images.length
+            imageCount: listingData.images.length,
+            price: listingData.price,
+            stock: listingData.stock
         });
 
         const listing = new Product(listingData);
@@ -340,8 +342,29 @@ router.post('/listings', protect, admin, async (req, res) => {
             name: err.name,
             path: err.path,
             value: err.value,
+            errors: err.errors ? Object.keys(err.errors) : null,
             stack: err.stack.substring(0, 300)
         });
+
+        // Handle MongoDB validation errors
+        if (err.name === 'ValidationError') {
+            const validationErrors = Object.values(err.errors)
+                .map(e => `${e.path}: ${e.message}`)
+                .join(', ');
+            return res.status(400).json({
+                success: false,
+                error: `Validation failed: ${validationErrors}`
+            });
+        }
+
+        // Handle MongoDB cast errors
+        if (err.name === 'CastError') {
+            return res.status(400).json({
+                success: false,
+                error: `Invalid ID format for field: ${err.path}`
+            });
+        }
+
         res.status(500).json({ 
             success: false, 
             error: err.message || 'Failed to create listing',
