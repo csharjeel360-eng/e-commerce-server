@@ -296,13 +296,34 @@ productSchema.pre('save', function(next) {
 
 // Method to generate thumbnail URLs
 productSchema.methods.generateThumbnails = function() {
-  this.images = this.images.map(image => {
-    if (!image.thumbnail) {
-      // Generate thumbnail URL from Cloudinary public_id
-      image.thumbnail = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/c_thumb,w_300,h_300/${image.public_id}`;
-    }
-    return image;
-  });
+  try {
+    if (!this.images || this.images.length === 0) return;
+    
+    this.images = this.images.map(image => {
+      if (image && !image.thumbnail && image.public_id) {
+        // Generate thumbnail URL from Cloudinary public_id
+        image.thumbnail = `https://res.cloudinary.com/${process.env.CLOUDINARY_CLOUD_NAME}/image/upload/c_thumb,w_300,h_300/${image.public_id}`;
+      }
+      return image;
+    });
+  } catch (err) {
+    console.error('Error generating thumbnails:', err.message);
+  }
 };
 
-module.exports = mongoose.model('Product', productSchema);
+// Add schema index for performance
+productSchema.index({ createdBy: 1, createdAt: -1 });
+productSchema.index({ type: 1, isActive: 1 });
+
+let Product;
+try {
+  // Check if model already exists (for hot reload scenarios)
+  Product = mongoose.model('Product');
+  console.log('✅ Product model loaded from cache');
+} catch (err) {
+  // Model doesn't exist yet, create it
+  Product = mongoose.model('Product', productSchema);
+  console.log('✅ Product model created and registered');
+}
+
+module.exports = Product;

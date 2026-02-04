@@ -173,6 +173,48 @@ router.get('/listings/:id', protect, admin, async (req, res) => {
     }
 });
 
+// Test endpoint - Create minimal product
+router.post('/listings/test', protect, admin, async (req, res) => {
+    try {
+        console.log('🧪 TEST: Creating minimal product...');
+        
+        const minimalData = {
+            title: 'Test Product',
+            description: 'Test Description',
+            category: req.body.category,
+            price: 99,
+            stock: 10,
+            productLink: 'https://example.com',
+            createdBy: req.user._id,
+            type: 'product'
+        };
+
+        console.log('🧪 TEST: Data:', minimalData);
+        const product = new Product(minimalData);
+        console.log('🧪 TEST: Instance created');
+        
+        await product.save();
+        console.log('🧪 TEST: Saved successfully');
+
+        res.json({
+            success: true,
+            data: product,
+            message: 'Test product created'
+        });
+    } catch (err) {
+        console.error('🧪 TEST ERROR:', {
+            message: err.message,
+            name: err.name,
+            code: err.code,
+            stack: err.stack
+        });
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+});
+
 // POST /api/admin/listings - Create new listing
 router.post('/listings', protect, admin, async (req, res) => {
     try {
@@ -288,29 +330,29 @@ router.post('/listings', protect, admin, async (req, res) => {
             listingData.price = parseFloat(price) || 0; // Ensure price is a number
             listingData.stock = parseInt(stock) || 0; // Ensure stock is a number
             listingData.originalPrice = parseFloat(req.body.originalPrice) || parseFloat(price) || 0;
-            listingData.productLink = externalLink || '#'; // Use externalLink for productLink
+            listingData.productLink = (externalLink && externalLink.trim()) || 'https://example.com'; // Use externalLink for productLink
         }
 
         if (type === 'tool' || type === 'job') {
             listingData.externalLink = externalLink;
             listingData.affiliateSource = affiliateSource;
             listingData.affiliateId = affiliateId;
-            listingData.productLink = externalLink || '#'; // Set productLink for compatibility
+            listingData.productLink = (externalLink && externalLink.trim()) || 'https://example.com'; // Set productLink for compatibility
         }
 
         if (type === 'tool') {
-            listingData.platform = platform || [];
-            listingData.features = features || [];
-            listingData.integrations = integrations || [];
+            listingData.platform = Array.isArray(platform) ? platform : [];
+            listingData.features = Array.isArray(features) ? features : [];
+            listingData.integrations = Array.isArray(integrations) ? integrations : [];
         }
 
         if (type === 'job') {
-            listingData.companyName = companyName;
-            listingData.jobType = jobType;
-            listingData.location = location;
-            listingData.salary = salary;
+            listingData.companyName = companyName || '';
+            listingData.jobType = jobType || '';
+            listingData.location = location || '';
+            listingData.salary = salary || '';
             listingData.experienceLevel = experienceLevel || 'any';
-            listingData.applicationDeadline = applicationDeadline;
+            listingData.applicationDeadline = applicationDeadline || null;
         }
 
         console.log('📋 Listing data prepared:', {
