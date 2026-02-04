@@ -17,7 +17,9 @@ const productSchema = new mongoose.Schema({
   },
   price: {
     type: Number,
-    required: true,
+    required: function() {
+      return this.type === 'product';
+    },
     min: 0
   },
   category: {
@@ -58,7 +60,9 @@ const productSchema = new mongoose.Schema({
   },
   stock: {
     type: Number,
-    required: true,
+    required: function() {
+      return this.type === 'product';
+    },
     default: 0
   },
   isActive: {

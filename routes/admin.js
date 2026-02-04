@@ -340,7 +340,7 @@ router.post('/listings', protect, admin, async (req, res) => {
 
         if (type === 'job') {
             listingData.companyName = companyName || '';
-            listingData.jobType = jobType || '';
+            listingData.jobType = jobType || null;
             listingData.location = location || '';
             listingData.salary = salary || '';
             listingData.experienceLevel = experienceLevel || 'any';
