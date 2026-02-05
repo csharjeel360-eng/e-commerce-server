@@ -104,17 +104,40 @@ router.post('/items', protect, async (req, res) => {
       });
     }
 
+    // Sanitize all items before saving to prevent validation errors
+    try {
+      cart.items.forEach((i, idx) => {
+        try {
+          i.price = Number(i.price || 0);
+        } catch (e) {
+          i.price = 0;
+        }
+        try {
+          i.quantity = Number(i.quantity || 1);
+        } catch (e) {
+          i.quantity = 1;
+        }
+        i.total = parseFloat(((i.price || 0) * (i.quantity || 1)).toFixed(2));
+        if (!i.productTitle) {
+          i.productTitle = i.product?.title || 'Item';
+        }
+      });
+    } catch (sanitizeErr) {
+      console.error('Error sanitizing cart items before save (POST /items):', sanitizeErr);
+    }
+
     await cart.save();
     // Populate only existing product refs (safe)
     await safePopulateCart(cart);
 
     res.status(201).json({ success: true, message: 'Item added to cart successfully', data: cart });
   } catch (error) {
-    console.error('Add to cart error:', error);
+    console.error('Add to cart error:', error.stack || error);
     res.status(500).json({
       success: false,
       message: 'Failed to add item to cart',
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 });
