@@ -58,9 +58,12 @@ router.post('/items', protect, async (req, res) => {
         return res.status(404).json({ success: false, message: 'Product not found' });
       }
 
-      // Check stock availability
-      if (product.stock < quantity) {
-        return res.status(400).json({ success: false, message: `Only ${product.stock} items available in stock` });
+      // Only enforce stock availability for physical 'product' types
+      if (product.type === 'product') {
+        const available = Number(product.stock || 0);
+        if (available < quantity) {
+          return res.status(400).json({ success: false, message: `Only ${available} items available in stock` });
+        }
       }
 
       // Add existing product reference
@@ -121,9 +124,12 @@ router.put('/items/:productId', protect, async (req, res) => {
     // Try to treat productId as a Product first
     const product = await Product.findById(productId);
     if (product) {
-      // Check stock availability
-      if (product.stock < quantity) {
-        return res.status(400).json({ success: false, message: `Only ${product.stock} items available in stock` });
+      // Only enforce stock availability for physical 'product' types
+      if (product.type === 'product') {
+        const available = Number(product.stock || 0);
+        if (available < quantity) {
+          return res.status(400).json({ success: false, message: `Only ${available} items available in stock` });
+        }
       }
       cart.updateItemQuantity(productId, quantity);
     } else {
