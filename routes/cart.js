@@ -40,31 +40,7 @@ router.get('/', protect, async (req, res) => {
 // Add item to cart
 router.post('/items', protect, async (req, res) => {
   try {
-    const { productId, quantity = 1 } = req.body;
-
-    if (!productId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Product ID is required'
-      });
-    }
-
-    // Find the product
-    const product = await Product.findById(productId);
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
-    }
-
-    // Check stock availability
-    if (product.stock < quantity) {
-      return res.status(400).json({
-        success: false,
-        message: `Only ${product.stock} items available in stock`
-      });
-    }
+    const { productId, quantity = 1, productTitle, price, productLink, productImage } = req.body;
 
     // Find or create cart
     let cart = await Cart.findOne({ user: req.user._id });
@@ -75,18 +51,48 @@ router.post('/items', protect, async (req, res) => {
       });
     }
 
-    // Add item to cart
-    cart.addItem(product, quantity);
-    await cart.save();
+    // If a productId was provided, try to add the referenced product
+    if (productId) {
+      const product = await Product.findById(productId);
+      if (!product) {
+        return res.status(404).json({ success: false, message: 'Product not found' });
+      }
 
-    // Populate the cart with product details
+      // Check stock availability
+      if (product.stock < quantity) {
+        return res.status(400).json({ success: false, message: `Only ${product.stock} items available in stock` });
+      }
+
+      // Add existing product reference
+      cart.addItem(product, quantity);
+    } else {
+      // No productId -> treat as external item (job/tool/offer)
+      // Require at least a title
+      const title = productTitle || req.body.title;
+      if (!title) {
+        return res.status(400).json({ success: false, message: 'External item title is required' });
+      }
+
+      const itemPrice = Number(price) || 0;
+      const qty = Number(quantity) || 1;
+
+      // Push external item (product left null)
+      cart.items.push({
+        product: null,
+        quantity: qty,
+        price: itemPrice,
+        total: itemPrice * qty,
+        productLink: productLink || null,
+        productTitle: title,
+        productImage: productImage || null
+      });
+    }
+
+    await cart.save();
+    // Populate only existing product refs
     await cart.populate('items.product', 'title price images stock');
 
-    res.status(201).json({
-      success: true,
-      message: 'Item added to cart successfully',
-      data: cart
-    });
+    res.status(201).json({ success: true, message: 'Item added to cart successfully', data: cart });
   } catch (error) {
     console.error('Add to cart error:', error);
     res.status(500).json({
@@ -104,47 +110,41 @@ router.put('/items/:productId', protect, async (req, res) => {
     const { quantity } = req.body;
 
     if (!quantity || quantity < 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid quantity is required'
-      });
+      return res.status(400).json({ success: false, message: 'Valid quantity is required' });
     }
 
     const cart = await Cart.findOne({ user: req.user._id });
     if (!cart) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cart not found'
-      });
+      return res.status(404).json({ success: false, message: 'Cart not found' });
     }
 
-    // Find the product to check stock
+    // Try to treat productId as a Product first
     const product = await Product.findById(productId);
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found'
-      });
+    if (product) {
+      // Check stock availability
+      if (product.stock < quantity) {
+        return res.status(400).json({ success: false, message: `Only ${product.stock} items available in stock` });
+      }
+      cart.updateItemQuantity(productId, quantity);
+    } else {
+      // Treat productId as a cart item _id for external items
+      const item = cart.items.id(productId);
+      if (!item) {
+        return res.status(404).json({ success: false, message: 'Cart item not found' });
+      }
+      if (quantity <= 0) {
+        // remove
+        cart.items.id(productId).remove();
+      } else {
+        cart.items.id(productId).quantity = quantity;
+        cart.items.id(productId).total = cart.items.id(productId).price * quantity;
+      }
     }
 
-    // Check stock availability
-    if (product.stock < quantity) {
-      return res.status(400).json({
-        success: false,
-        message: `Only ${product.stock} items available in stock`
-      });
-    }
-
-    // Update item quantity
-    cart.updateItemQuantity(productId, quantity);
     await cart.save();
     await cart.populate('items.product', 'title price images stock');
 
-    res.json({
-      success: true,
-      message: 'Cart updated successfully',
-      data: cart
-    });
+    res.json({ success: true, message: 'Cart updated successfully', data: cart });
   } catch (error) {
     console.error('Update cart error:', error);
     res.status(500).json({
@@ -162,22 +162,26 @@ router.delete('/items/:productId', protect, async (req, res) => {
 
     const cart = await Cart.findOne({ user: req.user._id });
     if (!cart) {
-      return res.status(404).json({
-        success: false,
-        message: 'Cart not found'
-      });
+      return res.status(404).json({ success: false, message: 'Cart not found' });
     }
 
-    // Remove item from cart
-    cart.removeItem(productId);
+    // Try to remove by Product reference first
+    const product = await Product.findById(productId);
+    if (product) {
+      cart.removeItem(productId);
+    } else {
+      // Otherwise treat productId as cart item _id
+      const item = cart.items.id(productId);
+      if (!item) {
+        return res.status(404).json({ success: false, message: 'Cart item not found' });
+      }
+      item.remove();
+    }
+
     await cart.save();
     await cart.populate('items.product', 'title price images stock');
 
-    res.json({
-      success: true,
-      message: 'Item removed from cart successfully',
-      data: cart
-    });
+    res.json({ success: true, message: 'Item removed from cart successfully', data: cart });
   } catch (error) {
     console.error('Remove from cart error:', error);
     res.status(500).json({
