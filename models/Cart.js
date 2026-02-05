@@ -84,7 +84,13 @@ cartSchema.pre('save', function(next) {
 cartSchema.methods.calculateTotals = function() {
   // Calculate subtotal from items
   this.subtotal = this.items.reduce((total, item) => {
-    return total + (item.price * item.quantity);
+    // Ensure price is a number (default to 0 if missing)
+    const price = Number(item.price || 0);
+    item.price = price;
+    const qty = Number(item.quantity || 0);
+    // Ensure total is numeric
+    item.total = parseFloat((price * qty).toFixed(2));
+    return total + (price * qty);
   }, 0);
 
   // Calculate tax (8% for example)
@@ -96,8 +102,10 @@ cartSchema.methods.calculateTotals = function() {
   // Calculate total
   this.total = parseFloat((this.subtotal + this.tax + this.shipping - (this.coupon?.discount || 0)).toFixed(2));
 
-  // Update item totals
+  // Ensure every item has valid numeric price and total
   this.items.forEach(item => {
+    item.price = Number(item.price || 0);
+    item.quantity = Number(item.quantity || 1);
     item.total = parseFloat((item.price * item.quantity).toFixed(2));
   });
 };
