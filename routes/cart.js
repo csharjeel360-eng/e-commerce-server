@@ -194,6 +194,7 @@ router.delete('/items/:productId', protect, async (req, res) => {
       product = null;
     }
 
+    console.debug('Cart DELETE request by user', req.user._id, 'productId', productId);
     if (product) {
       cart.removeItem(productId);
     } else {
@@ -223,18 +224,19 @@ router.delete('/items/:productId', protect, async (req, res) => {
     try {
       await cart.save();
     } catch (saveErr) {
-      console.error('Error saving cart after remove:', saveErr);
-      return res.status(500).json({ success: false, message: 'Failed to remove item from cart', error: saveErr.message });
+      console.error('Error saving cart after remove:', saveErr.stack || saveErr);
+      return res.status(500).json({ success: false, message: 'Failed to remove item from cart', error: saveErr.message, stack: saveErr.stack });
     }
     await safePopulateCart(cart);
 
     res.json({ success: true, message: 'Item removed from cart successfully', data: cart });
   } catch (error) {
-    console.error('Remove from cart error:', error);
+    console.error('Remove from cart error:', error.stack || error);
     res.status(500).json({
       success: false,
       message: 'Failed to remove item from cart',
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 });
