@@ -222,11 +222,30 @@ router.delete('/items/:productId', protect, async (req, res) => {
       cart.removeItem(productId);
     } else {
       // Otherwise treat productId as cart item _id
-      const item = cart.items.id(productId);
+      const item = cart.items.id ? cart.items.id(productId) : null;
       if (!item) {
-        return res.status(404).json({ success: false, message: 'Cart item not found' });
+        // try fallback: find by _id string match in case items are plain objects
+        const foundIdx = cart.items.findIndex(i => {
+          try {
+            return (i._id && i._id.toString && i._id.toString() === productId) || (i.id && i.id === productId);
+          } catch (e) {
+            return false;
+          }
+        });
+        if (foundIdx === -1) {
+          return res.status(404).json({ success: false, message: 'Cart item not found' });
+        }
+        cart.items.splice(foundIdx, 1);
+      } else {
+        // Mongoose subdocument: use remove if available, otherwise fallback to filtering
+        if (typeof item.remove === 'function') {
+          item.remove();
+        } else {
+          cart.items = cart.items.filter(i => {
+            try { return !(i._id && i._id.toString && i._id.toString() === productId); } catch (e) { return true; }
+          });
+        }
       }
-      item.remove();
     }
 
     // Sanitize remaining items to ensure price/quantity/total are numeric before validation
