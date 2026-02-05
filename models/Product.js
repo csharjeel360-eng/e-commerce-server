@@ -101,7 +101,9 @@ const productSchema = new mongoose.Schema({
   affiliateSource: {
     type: String,
     enum: ['producthunt', 'appsumo', 'capterra', 'company_website', 'other'],
-    default: null
+    // Do not default to `null` because Mongoose will validate `null` against the enum
+    // Leave undefined when not provided so enum validation only runs for set values
+    default: undefined
   },
 
   affiliateId: {
