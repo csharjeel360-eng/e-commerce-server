@@ -6,6 +6,18 @@ const mongoose = require('mongoose');
 const { protect } = require('../middleware/auth');
 const router = express.Router();
 
+// Helper: safe populate to avoid populate-related crashes
+async function safePopulateCart(cart) {
+  try {
+    if (!cart) return cart;
+    await cart.populate('items.product', 'title price images stock productLink');
+    return cart;
+  } catch (err) {
+    console.error('Cart populate error:', err);
+    return cart; // return cart even if populate failed
+  }
+}
+
 // Get user's cart
 router.get('/', protect, async (req, res) => {
   try {
@@ -20,8 +32,8 @@ router.get('/', protect, async (req, res) => {
         items: []
       });
       await cart.save();
-      await cart.populate('items.product', 'title price images stock');
-      await cart.populate('user', 'name email');
+      await safePopulateCart(cart);
+      try { await cart.populate('user', 'name email'); } catch(e){ console.error('User populate error:', e); }
     }
 
     res.json({
@@ -93,8 +105,8 @@ router.post('/items', protect, async (req, res) => {
     }
 
     await cart.save();
-    // Populate only existing product refs
-    await cart.populate('items.product', 'title price images stock');
+    // Populate only existing product refs (safe)
+    await safePopulateCart(cart);
 
     res.status(201).json({ success: true, message: 'Item added to cart successfully', data: cart });
   } catch (error) {
@@ -149,7 +161,7 @@ router.put('/items/:productId', protect, async (req, res) => {
     }
 
     await cart.save();
-    await cart.populate('items.product', 'title price images stock');
+    await safePopulateCart(cart);
 
     res.json({ success: true, message: 'Cart updated successfully', data: cart });
   } catch (error) {
@@ -214,7 +226,7 @@ router.delete('/items/:productId', protect, async (req, res) => {
       console.error('Error saving cart after remove:', saveErr);
       return res.status(500).json({ success: false, message: 'Failed to remove item from cart', error: saveErr.message });
     }
-    await cart.populate('items.product', 'title price images stock');
+    await safePopulateCart(cart);
 
     res.json({ success: true, message: 'Item removed from cart successfully', data: cart });
   } catch (error) {
@@ -320,7 +332,7 @@ router.post('/coupon', protect, async (req, res) => {
     // Apply coupon
     cart.applyCoupon(couponCode.toUpperCase(), discount);
     await cart.save();
-    await cart.populate('items.product', 'title price images stock');
+    await safePopulateCart(cart);
 
     res.json({
       success: true,
@@ -351,7 +363,7 @@ router.delete('/coupon', protect, async (req, res) => {
     // Remove coupon
     cart.removeCoupon();
     await cart.save();
-    await cart.populate('items.product', 'title price images stock');
+    await safePopulateCart(cart);
 
     res.json({
       success: true,
