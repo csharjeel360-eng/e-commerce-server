@@ -5,11 +5,18 @@ const { deleteFromCloudinary } = require('../middleware/uploadUtils');
 const router = express.Router();
 
 // Upload single image
-router.post('/image', protect, admin, upload.single('file'), async (req, res) => {
+// Accept field name 'image' to match frontend `uploadService`,
+// keep compatibility with 'file' if used elsewhere.
+router.post('/image', protect, admin, upload.single('image'), async (req, res) => {
   try {
     console.log('📤 POST /image - Upload request received');
     console.log('   Headers:', req.headers['content-type']);
     console.log('   User:', req.user?.email);
+    // If frontend sent field 'file' instead, multer won't populate req.file for 'image'.
+    // Check both possibilities and normalize.
+    if (!req.file && req.body && req.files && req.files.file) {
+      req.file = req.files.file[0];
+    }
     console.log('   File present:', !!req.file);
     console.log('   File keys:', req.file ? Object.keys(req.file) : 'N/A');
 
