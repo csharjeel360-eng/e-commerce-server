@@ -2,6 +2,7 @@
 const express = require('express');
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
+const mongoose = require('mongoose');
 const { protect } = require('../middleware/auth');
 const router = express.Router();
 
@@ -171,8 +172,16 @@ router.delete('/items/:productId', protect, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Cart not found' });
     }
 
-    // Try to remove by Product reference first
-    const product = await Product.findById(productId);
+    // Try to remove by Product reference first only if the id looks like an ObjectId
+    let product = null;
+    try {
+      if (mongoose.Types.ObjectId.isValid(productId)) {
+        product = await Product.findById(productId);
+      }
+    } catch (err) {
+      product = null;
+    }
+
     if (product) {
       cart.removeItem(productId);
     } else {
@@ -184,7 +193,27 @@ router.delete('/items/:productId', protect, async (req, res) => {
       item.remove();
     }
 
-    await cart.save();
+    // Sanitize remaining items to ensure price/quantity/total are numeric before validation
+    cart.items.forEach(i => {
+      try {
+        i.price = Number(i.price || 0);
+      } catch (e) {
+        i.price = 0;
+      }
+      try {
+        i.quantity = Number(i.quantity || 1);
+      } catch (e) {
+        i.quantity = 1;
+      }
+      i.total = parseFloat(((i.price || 0) * (i.quantity || 1)).toFixed(2));
+    });
+
+    try {
+      await cart.save();
+    } catch (saveErr) {
+      console.error('Error saving cart after remove:', saveErr);
+      return res.status(500).json({ success: false, message: 'Failed to remove item from cart', error: saveErr.message });
+    }
     await cart.populate('items.product', 'title price images stock');
 
     res.json({ success: true, message: 'Item removed from cart successfully', data: cart });

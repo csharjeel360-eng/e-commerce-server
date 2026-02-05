@@ -74,8 +74,8 @@ const cartSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Calculate totals before saving
-cartSchema.pre('save', function(next) {
+// Calculate totals before validation to ensure numeric price/total are set
+cartSchema.pre('validate', function(next) {
   this.calculateTotals();
   next();
 });
@@ -112,9 +112,14 @@ cartSchema.methods.calculateTotals = function() {
 
 // Instance method to add item to cart
 cartSchema.methods.addItem = function(product, quantity = 1) {
-  const existingItemIndex = this.items.findIndex(
-    item => item.product.toString() === product._id.toString()
-  );
+  const pidStr = product._id.toString();
+  const existingItemIndex = this.items.findIndex(item => {
+    try {
+      return item.product && item.product.toString() === pidStr;
+    } catch (e) {
+      return false;
+    }
+  });
 
   if (existingItemIndex > -1) {
     // Update existing item quantity
@@ -139,9 +144,14 @@ cartSchema.methods.addItem = function(product, quantity = 1) {
 
 // Instance method to update item quantity
 cartSchema.methods.updateItemQuantity = function(productId, quantity) {
-  const itemIndex = this.items.findIndex(
-    item => item.product.toString() === productId.toString()
-  );
+  const pidStr = productId.toString();
+  const itemIndex = this.items.findIndex(item => {
+    try {
+      return item.product && item.product.toString() === pidStr;
+    } catch (e) {
+      return false;
+    }
+  });
 
   if (itemIndex > -1) {
     if (quantity <= 0) {
@@ -159,9 +169,15 @@ cartSchema.methods.updateItemQuantity = function(productId, quantity) {
 
 // Instance method to remove item from cart
 cartSchema.methods.removeItem = function(productId) {
-  this.items = this.items.filter(
-    item => item.product.toString() !== productId.toString()
-  );
+  const pidStr = productId.toString();
+  this.items = this.items.filter(item => {
+    try {
+      // Keep items that don't match the product id (also keep external items with null product)
+      return !(item.product && item.product.toString() === pidStr);
+    } catch (e) {
+      return true;
+    }
+  });
   this.calculateTotals();
   return this;
 };
