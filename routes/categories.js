@@ -126,18 +126,26 @@ router.delete('/:id', protect, admin, async (req, res) => {
   try {
     const category = await Category.findById(req.params.id);
     
-    if (category) {
-      // Delete image from Cloudinary
-      await deleteFromCloudinary(category.image.public_id);
-      
-      // Permanently delete category
-      await Category.findByIdAndDelete(req.params.id);
-      
-      res.json({ message: 'Category deleted permanently' });
-    } else {
-      res.status(404).json({ message: 'Category not found' });
+    if (!category) {
+      return res.status(404).json({ message: 'Category not found' });
     }
+
+    // Delete image from Cloudinary (non-blocking - don't fail if image doesn't exist)
+    try {
+      if (category.image && category.image.public_id) {
+        await deleteFromCloudinary(category.image.public_id);
+      }
+    } catch (imageErr) {
+      console.warn('Warning: Image deletion from Cloudinary failed:', imageErr.message);
+      // Continue with category deletion even if image deletion fails
+    }
+    
+    // Permanently delete category
+    await Category.findByIdAndDelete(req.params.id);
+    
+    res.json({ message: 'Category deleted permanently' });
   } catch (error) {
+    console.error('Error deleting category:', error);
     res.status(500).json({ message: error.message });
   }
 });
