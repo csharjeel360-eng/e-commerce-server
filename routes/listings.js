@@ -39,6 +39,28 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get product counts per category
+router.get('/categories/counts', async (req, res) => {
+  try {
+    const counts = await Product.aggregate([
+      { $match: { isActive: true } },
+      { $group: {
+        _id: '$category',
+        count: { $sum: 1 }
+      }},
+      { $project: {
+        category: '$_id',
+        count: 1,
+        _id: 0
+      }}
+    ]);
+
+    res.json(counts);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get single listing
 router.get('/:id', async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {

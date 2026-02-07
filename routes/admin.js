@@ -655,7 +655,7 @@ router.get('/analytics/summary', protect, admin, async (req, res) => {
 // Get all categories (for admin panel)
 router.get('/categories', protect, admin, async (req, res) => {
   try {
-    const categories = await Category.find({ isActive: true })
+    const categories = await Category.find()
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
     
@@ -855,11 +855,10 @@ router.delete('/categories/:id', protect, admin, async (req, res) => {
       // Delete image from Cloudinary
       await deleteFromCloudinary(category.image.public_id);
       
-      // Soft delete category
-      category.isActive = false;
-      await category.save();
+      // Permanently delete category
+      await Category.findByIdAndDelete(req.params.id);
       
-      res.json({ message: 'Category removed' });
+      res.json({ message: 'Category deleted permanently' });
     } else {
       res.status(404).json({ message: 'Category not found' });
     }
