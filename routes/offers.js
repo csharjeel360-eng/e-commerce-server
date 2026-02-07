@@ -6,107 +6,7 @@ const { deleteFromCloudinary } = require('../middleware/uploadUtils');
 const router = express.Router();
 
 // ============================================
-// PUBLIC ROUTES - Get Offers
-// ============================================
-
-// GET /api/offers - Get all active offers
-router.get('/', async (req, res) => {
-  try {
-    const { type, category, network, search, listing, page = 1, limit = 10 } = req.query;
-    
-    let filter = { status: 'active' };
-    
-    if (type) filter.type = type;
-    if (category) filter.category = category;
-    if (listing) filter.listing = listing; // allow filtering by linked listing id
-    if (network) filter.network = new RegExp(network, 'i');
-    if (search) {
-      filter.$or = [
-        { title: new RegExp(search, 'i') },
-        { description: new RegExp(search, 'i') },
-        { network: new RegExp(search, 'i') }
-      ];
-    }
-
-    const skip = (page - 1) * limit;
-    const total = await Offer.countDocuments(filter);
-    const offers = await Offer.find(filter)
-      .populate('category', 'name')
-      .populate('createdBy', 'name')
-      .sort({ featured: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
-
-    res.json({
-      success: true,
-      data: offers,
-      pagination: {
-        total,
-        page: parseInt(page),
-        limit: parseInt(limit),
-        pages: Math.ceil(total / limit)
-      }
-    });
-  } catch (err) {
-    console.error('Error fetching offers:', err);
-    res.status(500).json({ success: false, error: 'Failed to fetch offers' });
-  }
-});
-
-// GET /api/offers/:id - Get single offer
-router.get('/:id', async (req, res) => {
-  try {
-    const offer = await Offer.findById(req.params.id)
-      .populate('category', 'name')
-      .populate('createdBy', 'name');
-
-    if (!offer) {
-      return res.status(404).json({ success: false, error: 'Offer not found' });
-    }
-
-    res.json({ success: true, data: offer });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Failed to fetch offer' });
-  }
-});
-
-// GET /api/offers/category/:categoryId - Get offers by category
-router.get('/category/:categoryId', async (req, res) => {
-  try {
-    const offers = await Offer.find({
-      category: req.params.categoryId,
-      status: 'active'
-    })
-      .populate('category', 'name')
-      .sort({ featured: -1, createdAt: -1 })
-      .lean();
-
-    res.json({ success: true, data: offers });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Failed to fetch offers' });
-  }
-});
-
-// GET /api/offers/type/:type - Get offers by type
-router.get('/type/:type', async (req, res) => {
-  try {
-    const offers = await Offer.find({
-      type: req.params.type,
-      status: 'active'
-    })
-      .populate('category', 'name')
-      .sort({ featured: -1, createdAt: -1 })
-      .lean();
-
-    res.json({ success: true, data: offers });
-  } catch (err) {
-    res.status(500).json({ success: false, error: 'Failed to fetch offers' });
-  }
-});
-
-// ============================================
-// ADMIN ROUTES - Manage Offers
+// ADMIN ROUTES - Manage Offers (MUST BE FIRST)
 // ============================================
 
 // GET /api/offers/admin/all - Get all offers (admin)
@@ -363,6 +263,110 @@ router.get('/admin/stats', protect, admin, async (req, res) => {
     res.json({ success: true, data: stats });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to fetch stats' });
+  }
+});
+
+// ============================================
+// PUBLIC ROUTES - SPECIFIC PATHS (BEFORE GENERIC /:id)
+// ============================================
+
+// GET /api/offers/category/:categoryId - Get offers by category
+router.get('/category/:categoryId', async (req, res) => {
+  try {
+    const offers = await Offer.find({
+      category: req.params.categoryId,
+      status: 'active'
+    })
+      .populate('category', 'name')
+      .sort({ featured: -1, createdAt: -1 })
+      .lean();
+
+    res.json({ success: true, data: offers });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch offers' });
+  }
+});
+
+// GET /api/offers/type/:type - Get offers by type
+router.get('/type/:type', async (req, res) => {
+  try {
+    const offers = await Offer.find({
+      type: req.params.type,
+      status: 'active'
+    })
+      .populate('category', 'name')
+      .sort({ featured: -1, createdAt: -1 })
+      .lean();
+
+    res.json({ success: true, data: offers });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch offers' });
+  }
+});
+
+// ============================================
+// PUBLIC ROUTES - GENERIC (MUST BE LAST)
+// ============================================
+
+// GET /api/offers/:id - Get single offer
+router.get('/:id', async (req, res) => {
+  try {
+    const offer = await Offer.findById(req.params.id)
+      .populate('category', 'name')
+      .populate('createdBy', 'name');
+
+    if (!offer) {
+      return res.status(404).json({ success: false, error: 'Offer not found' });
+    }
+
+    res.json({ success: true, data: offer });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch offer' });
+  }
+});
+
+// GET /api/offers - Get all active offers
+router.get('/', async (req, res) => {
+  try {
+    const { type, category, network, search, listing, page = 1, limit = 10 } = req.query;
+    
+    let filter = { status: 'active' };
+    
+    if (type) filter.type = type;
+    if (category) filter.category = category;
+    if (listing) filter.listing = listing;
+    if (network) filter.network = new RegExp(network, 'i');
+    if (search) {
+      filter.$or = [
+        { title: new RegExp(search, 'i') },
+        { description: new RegExp(search, 'i') },
+        { network: new RegExp(search, 'i') }
+      ];
+    }
+
+    const skip = (page - 1) * limit;
+    const total = await Offer.countDocuments(filter);
+    const offers = await Offer.find(filter)
+      .populate('category', 'name')
+      .populate('createdBy', 'name')
+      .sort({ featured: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    res.json({
+      success: true,
+      data: offers,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching offers:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch offers' });
   }
 });
 
