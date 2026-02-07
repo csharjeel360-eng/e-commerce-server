@@ -751,6 +751,27 @@ router.post('/categories', protect, admin, upload.single('image'), async (req, r
       code: error.code,
       details: error.details
     });
+    
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      console.error('❌ Duplicate key error - index:', error.keyPattern);
+      const field = Object.keys(error.keyValue || {})[0] || 'unknown';
+      const value = error.keyValue?.[field];
+      
+      let errorMsg = `A category with this ${field} already exists`;
+      if (field === 'name' && error.keyPattern?.type) {
+        errorMsg = `A category named "${value}" of this type already exists`;
+      }
+      
+      // Delete uploaded image if duplicate found
+      if (req.file && req.file.cloudinary) {
+        await deleteFromCloudinary(req.file.cloudinary.public_id);
+        console.log('   Cleaned up uploaded image due to duplicate error');
+      }
+      
+      return res.status(400).json({ message: errorMsg });
+    }
+    
     // Delete uploaded image if category creation fails
     if (req.file && req.file.cloudinary) {
       await deleteFromCloudinary(req.file.cloudinary.public_id);
