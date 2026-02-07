@@ -669,32 +669,55 @@ router.get('/categories', protect, admin, async (req, res) => {
 // Create category (Admin only)
 router.post('/categories', protect, admin, upload.single('image'), async (req, res) => {
   try {
+    console.log('📋 Category Creation - Request Details:');
+    console.log('   Body:', req.body);
+    console.log('   File:', req.file ? {
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      hasCloudinary: !!req.file.cloudinary,
+      cloudinaryUrl: req.file.path
+    } : 'NO FILE');
+
     const { name, description, type = 'product', isActive } = req.body;
+    
+    console.log('📝 Parsed Fields:');
+    console.log('   name:', name, '(type:', typeof name, ')');
+    console.log('   description:', description, '(type:', typeof description, ')');
+    console.log('   type:', type);
+    console.log('   isActive:', isActive, '(type:', typeof isActive, ')');
     
     // Validate required fields
     if (!name || !name.trim()) {
-      if (req.file && req.file.filename) {
-        await deleteFromCloudinary(req.file.filename);
+      console.warn('❌ Validation Error: name is missing or empty');
+      if (req.file && req.file.cloudinary) {
+        await deleteFromCloudinary(req.file.cloudinary.public_id);
+        console.log('   Cleaned up uploaded image');
       }
       return res.status(400).json({ message: 'Category name is required' });
     }
 
     if (!description || !description.trim()) {
-      if (req.file && req.file.filename) {
-        await deleteFromCloudinary(req.file.filename);
+      console.warn('❌ Validation Error: description is missing or empty');
+      if (req.file && req.file.cloudinary) {
+        await deleteFromCloudinary(req.file.cloudinary.public_id);
+        console.log('   Cleaned up uploaded image');
       }
       return res.status(400).json({ message: 'Category description is required' });
     }
     
     if (!req.file) {
+      console.warn('❌ Validation Error: no image file provided');
       return res.status(400).json({ message: 'Image is required' });
     }
 
     // Validate type
     const validTypes = ['product', 'offer', 'job', 'software'];
     if (!validTypes.includes(type)) {
-      if (req.file && req.file.filename) {
-        await deleteFromCloudinary(req.file.filename);
+      console.warn('❌ Validation Error: invalid type:', type);
+      if (req.file && req.file.cloudinary) {
+        await deleteFromCloudinary(req.file.cloudinary.public_id);
+        console.log('   Cleaned up uploaded image');
       }
       return res.status(400).json({ message: 'Invalid category type' });
     }
@@ -705,6 +728,8 @@ router.post('/categories', protect, admin, upload.single('image'), async (req, r
       parsedIsActive = isActive === true || isActive === 'true';
     }
 
+    console.log('✅ All validations passed, creating category...');
+
     const category = new Category({
       name: name.trim(),
       description: description.trim(),
@@ -712,19 +737,25 @@ router.post('/categories', protect, admin, upload.single('image'), async (req, r
       isActive: parsedIsActive,
       image: {
         url: req.file.path,
-        public_id: req.file.filename
+        public_id: req.file.cloudinary?.public_id || req.file.filename
       },
       createdBy: req.user._id
     });
 
     const createdCategory = await category.save();
+    console.log('✅ Category created successfully:', createdCategory._id);
     res.status(201).json(createdCategory);
   } catch (error) {
+    console.error('❌ Category creation error:', {
+      message: error.message,
+      code: error.code,
+      details: error.details
+    });
     // Delete uploaded image if category creation fails
-    if (req.file && req.file.filename) {
-      await deleteFromCloudinary(req.file.filename);
+    if (req.file && req.file.cloudinary) {
+      await deleteFromCloudinary(req.file.cloudinary.public_id);
+      console.log('   Cleaned up uploaded image due to error');
     }
-    console.error('Category creation error:', error);
     res.status(400).json({ message: error.message });
   }
 });
