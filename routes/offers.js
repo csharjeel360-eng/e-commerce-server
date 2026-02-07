@@ -12,12 +12,13 @@ const router = express.Router();
 // GET /api/offers - Get all active offers
 router.get('/', async (req, res) => {
   try {
-    const { type, category, network, search, page = 1, limit = 10 } = req.query;
+    const { type, category, network, search, listing, page = 1, limit = 10 } = req.query;
     
     let filter = { status: 'active' };
     
     if (type) filter.type = type;
     if (category) filter.category = category;
+    if (listing) filter.listing = listing; // allow filtering by linked listing id
     if (network) filter.network = new RegExp(network, 'i');
     if (search) {
       filter.$or = [
