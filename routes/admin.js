@@ -669,7 +669,22 @@ router.get('/categories', protect, admin, async (req, res) => {
 // Create category (Admin only)
 router.post('/categories', protect, admin, upload.single('image'), async (req, res) => {
   try {
-    const { name, description, type = 'product' } = req.body;
+    const { name, description, type = 'product', isActive } = req.body;
+    
+    // Validate required fields
+    if (!name || !name.trim()) {
+      if (req.file && req.file.filename) {
+        await deleteFromCloudinary(req.file.filename);
+      }
+      return res.status(400).json({ message: 'Category name is required' });
+    }
+
+    if (!description || !description.trim()) {
+      if (req.file && req.file.filename) {
+        await deleteFromCloudinary(req.file.filename);
+      }
+      return res.status(400).json({ message: 'Category description is required' });
+    }
     
     if (!req.file) {
       return res.status(400).json({ message: 'Image is required' });
@@ -684,10 +699,17 @@ router.post('/categories', protect, admin, upload.single('image'), async (req, r
       return res.status(400).json({ message: 'Invalid category type' });
     }
 
+    // Parse isActive - convert string 'true'/'false' to boolean
+    let parsedIsActive = true;
+    if (isActive !== undefined && isActive !== null) {
+      parsedIsActive = isActive === true || isActive === 'true';
+    }
+
     const category = new Category({
-      name,
-      description,
+      name: name.trim(),
+      description: description.trim(),
       type,
+      isActive: parsedIsActive,
       image: {
         url: req.file.path,
         public_id: req.file.filename
@@ -702,6 +724,7 @@ router.post('/categories', protect, admin, upload.single('image'), async (req, r
     if (req.file && req.file.filename) {
       await deleteFromCloudinary(req.file.filename);
     }
+    console.error('Category creation error:', error);
     res.status(400).json({ message: error.message });
   }
 });
@@ -711,49 +734,62 @@ router.put('/categories/:id', protect, admin, upload.single('image'), async (req
   try {
     const category = await Category.findById(req.params.id);
     
-    if (category) {
-      const oldImagePublicId = category.image.public_id;
-      
-      category.name = req.body.name || category.name;
-      category.description = req.body.description || category.description;
-      
-      // Update type if provided
-      if (req.body.type) {
-        const validTypes = ['product', 'offer', 'job', 'software'];
-        if (!validTypes.includes(req.body.type)) {
-          if (req.file && req.file.filename) {
-            await deleteFromCloudinary(req.file.filename);
-          }
-          return res.status(400).json({ message: 'Invalid category type' });
-        }
-        category.type = req.body.type;
-      }
-      
-      if (req.file) {
-        // Update image
-        category.image = {
-          url: req.file.path,
-          public_id: req.file.filename
-        };
-        
-        // Delete old image from Cloudinary
-        await deleteFromCloudinary(oldImagePublicId);
-      }
-
-      const updatedCategory = await category.save();
-      res.json(updatedCategory);
-    } else {
+    if (!category) {
       // Delete uploaded image if category not found
       if (req.file && req.file.filename) {
         await deleteFromCloudinary(req.file.filename);
       }
-      res.status(404).json({ message: 'Category not found' });
+      return res.status(404).json({ message: 'Category not found' });
     }
+
+    const oldImagePublicId = category.image.public_id;
+    
+    // Update name if provided
+    if (req.body.name && req.body.name.trim()) {
+      category.name = req.body.name.trim();
+    }
+
+    // Update description if provided
+    if (req.body.description !== undefined) {
+      category.description = req.body.description.trim();
+    }
+    
+    // Update type if provided
+    if (req.body.type) {
+      const validTypes = ['product', 'offer', 'job', 'software'];
+      if (!validTypes.includes(req.body.type)) {
+        if (req.file && req.file.filename) {
+          await deleteFromCloudinary(req.file.filename);
+        }
+        return res.status(400).json({ message: 'Invalid category type' });
+      }
+      category.type = req.body.type;
+    }
+
+    // Update isActive if provided (handle string 'true'/'false')
+    if (req.body.isActive !== undefined && req.body.isActive !== null) {
+      category.isActive = req.body.isActive === true || req.body.isActive === 'true';
+    }
+    
+    if (req.file) {
+      // Update image
+      category.image = {
+        url: req.file.path,
+        public_id: req.file.filename
+      };
+      
+      // Delete old image from Cloudinary
+      await deleteFromCloudinary(oldImagePublicId);
+    }
+
+    const updatedCategory = await category.save();
+    res.json(updatedCategory);
   } catch (error) {
     // Delete uploaded image if update fails
     if (req.file && req.file.filename) {
       await deleteFromCloudinary(req.file.filename);
     }
+    console.error('Category update error:', error);
     res.status(400).json({ message: error.message });
   }
 });
