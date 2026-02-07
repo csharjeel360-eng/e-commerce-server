@@ -5,6 +5,8 @@ const Product = require('../models/Product');
 const Category = require('../models/Category');
 const HeroBanner = require('../models/HeroBanner');
 const { protect, admin } = require('../middleware/auth');
+const upload = require('../middleware/upload');
+const { deleteFromCloudinary } = require('../middleware/uploadUtils');
 const router = express.Router();
 
 // ============================================
@@ -644,6 +646,138 @@ router.get('/analytics/summary', protect, admin, async (req, res) => {
     } catch (err) {
         res.status(500).json({ success: false, error: 'Failed to fetch summary' });
     }
+});
+
+// ============================================
+// CATEGORY MANAGEMENT (Admin Routes)
+// ============================================
+
+// Get all categories (for admin panel)
+router.get('/categories', protect, admin, async (req, res) => {
+  try {
+    const categories = await Category.find()
+      .populate('createdBy', 'name email')
+      .sort({ createdAt: -1 });
+    
+    res.json(categories);
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Create category (Admin only)
+router.post('/categories', protect, admin, upload.single('image'), async (req, res) => {
+  try {
+    const { name, description, type = 'product' } = req.body;
+    
+    if (!req.file) {
+      return res.status(400).json({ message: 'Image is required' });
+    }
+
+    // Validate type
+    const validTypes = ['product', 'offer', 'job', 'software'];
+    if (!validTypes.includes(type)) {
+      if (req.file && req.file.filename) {
+        await deleteFromCloudinary(req.file.filename);
+      }
+      return res.status(400).json({ message: 'Invalid category type' });
+    }
+
+    const category = new Category({
+      name,
+      description,
+      type,
+      image: {
+        url: req.file.path,
+        public_id: req.file.filename
+      },
+      createdBy: req.user._id
+    });
+
+    const createdCategory = await category.save();
+    res.status(201).json(createdCategory);
+  } catch (error) {
+    // Delete uploaded image if category creation fails
+    if (req.file && req.file.filename) {
+      await deleteFromCloudinary(req.file.filename);
+    }
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Update category (Admin only)
+router.put('/categories/:id', protect, admin, upload.single('image'), async (req, res) => {
+  try {
+    const category = await Category.findById(req.params.id);
+    
+    if (category) {
+      const oldImagePublicId = category.image.public_id;
+      
+      category.name = req.body.name || category.name;
+      category.description = req.body.description || category.description;
+      
+      // Update type if provided
+      if (req.body.type) {
+        const validTypes = ['product', 'offer', 'job', 'software'];
+        if (!validTypes.includes(req.body.type)) {
+          if (req.file && req.file.filename) {
+            await deleteFromCloudinary(req.file.filename);
+          }
+          return res.status(400).json({ message: 'Invalid category type' });
+        }
+        category.type = req.body.type;
+      }
+      
+      if (req.file) {
+        // Update image
+        category.image = {
+          url: req.file.path,
+          public_id: req.file.filename
+        };
+        
+        // Delete old image from Cloudinary
+        await deleteFromCloudinary(oldImagePublicId);
+      }
+
+      const updatedCategory = await category.save();
+      res.json(updatedCategory);
+    } else {
+      // Delete uploaded image if category not found
+      if (req.file && req.file.filename) {
+        await deleteFromCloudinary(req.file.filename);
+      }
+      res.status(404).json({ message: 'Category not found' });
+    }
+  } catch (error) {
+    // Delete uploaded image if update fails
+    if (req.file && req.file.filename) {
+      await deleteFromCloudinary(req.file.filename);
+    }
+    res.status(400).json({ message: error.message });
+  }
+});
+
+// Delete category (Admin only)
+router.delete('/categories/:id', protect, admin, async (req, res) => {
+  try {
+    const category = await Category.findById(req.params.id);
+    
+    if (category) {
+      // Delete image from Cloudinary
+      await deleteFromCloudinary(category.image.public_id);
+      
+      // Soft delete category
+      category.isActive = false;
+      await category.save();
+      
+      res.json({ message: 'Category removed' });
+    } else {
+      res.status(404).json({ message: 'Category not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 });
 
 module.exports = router;
