@@ -655,7 +655,7 @@ router.get('/analytics/summary', protect, admin, async (req, res) => {
 // Get all categories (for admin panel)
 router.get('/categories', protect, admin, async (req, res) => {
   try {
-    const categories = await Category.find()
+    const categories = await Category.find({ isActive: true })
       .populate('createdBy', 'name email')
       .sort({ createdAt: -1 });
     
