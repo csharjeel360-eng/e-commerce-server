@@ -65,7 +65,7 @@ router.post('/admin', protect, admin, async (req, res) => {
       trackingUrl,
       thumbnail,
       type = 'cpa',
-      network = 'Direct',
+      network,
       offerId,
       commission = 0,
       commissionType = 'fixed',
@@ -75,10 +75,20 @@ router.post('/admin', protect, admin, async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!title || !description || !category || !trackingUrl) {
+    if (!title || !description || !category || !trackingUrl || !network) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: title, description, category, trackingUrl'
+        error: 'Missing required fields: title, description, category, trackingUrl, network'
+      });
+    }
+
+    // Validate category exists
+    const Category = require('../models/Category');
+    const categoryExists = await Category.findById(category);
+    if (!categoryExists) {
+      return res.status(400).json({
+        success: false,
+        error: 'Category not found. Please select a valid category.'
       });
     }
 

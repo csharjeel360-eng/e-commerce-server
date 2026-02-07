@@ -9,7 +9,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { type } = req.query;
-    let filter = { isActive: true };
+    let filter = {};
     
     // STRICT FILTERING: Only return categories matching the requested type
     if (type) {
