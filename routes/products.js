@@ -11,15 +11,24 @@ router.get('/', async (req, res) => {
   try {
     const pageSize = 10;
     const page = Number(req.query.pageNumber) || 1;
-    const keyword = req.query.keyword ? {
-      title: {
-        $regex: req.query.keyword,
-        $options: 'i'
-      }
-    } : {};
+    
+    // Build search query that searches in multiple fields
+    let searchQuery = { isActive: true };
+    
+    if (req.query.keyword) {
+      const keyword = req.query.keyword;
+      searchQuery = {
+        isActive: true,
+        $or: [
+          { title: { $regex: keyword, $options: 'i' } },
+          { description: { $regex: keyword, $options: 'i' } },
+          { tags: { $regex: keyword, $options: 'i' } }
+        ]
+      };
+    }
 
-    const count = await Product.countDocuments({ ...keyword, isActive: true });
-    const products = await Product.find({ ...keyword, isActive: true })
+    const count = await Product.countDocuments(searchQuery);
+    const products = await Product.find(searchQuery)
       .populate('category', 'name')
       .populate('createdBy', 'name')
       .populate('reviews.user', 'name')
