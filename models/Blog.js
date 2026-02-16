@@ -358,7 +358,7 @@ blogSchema.methods.convertMarkdownToHtml = function(markdown) {
         }
         if (p.startsWith('target:')) {
           const t = p.slice(7).trim();
-          targetAttr = ` target=\"${t}\"`;
+          targetAttr = ` target="${t}"`;
         }
       });
     }
@@ -385,7 +385,7 @@ blogSchema.methods.convertMarkdownToHtml = function(markdown) {
         }
         if (p.startsWith('target:')) {
           const t = p.slice(7).trim();
-          targetAttr = ` target=\"${t}\"`;
+          targetAttr = ` target="${t}"`;
         }
       });
     }
