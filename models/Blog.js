@@ -391,7 +391,8 @@ blogSchema.methods.convertMarkdownToHtml = function(markdown) {
     }
     const relSection = relAttr ? relAttr : '';
     const targetSection = targetAttr ? targetAttr : '';
-    return `<a href="${url}" class="text-blue-600 hover:text-blue-800 underline transition-colors"${targetSection}${relSection}>${url}</a>`;
+    const urlObj = new URL(url).hostname || url;
+    return `<a href="${url}" class="text-blue-600 hover:text-blue-800 underline transition-colors"${targetSection}${relSection}>${urlObj}</a>`;
   });
   
   // Inline code
