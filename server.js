@@ -37,7 +37,8 @@ app.use(cors({
       process.env.CLIENT_URL,
       'http://localhost:3000',
       'http://localhost:5173',
-      'https://yourdomain.com' // Add your production domain
+      'https://teckysolutions.com',
+      'https://www.teckysolutions.com'
     ];
     
     // Allow all localhost origins and specified domains
@@ -66,7 +67,7 @@ app.use((req, res, next) => {
   res.removeHeader('X-Powered-By');
   
   // CORS headers (in addition to cors middleware)
-  const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', process.env.CLIENT_URL];
+  const allowedOrigins = ['http://localhost:5173', 'http://localhost:3000', 'https://teckysolutions.com', 'https://www.teckysolutions.com', process.env.CLIENT_URL];
   const origin = req.headers.origin;
   
   if (allowedOrigins.includes(origin)) {

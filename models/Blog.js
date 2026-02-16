@@ -248,11 +248,13 @@ blogSchema.methods.generateProcessedContent = function() {
           `![](${image.public_id})`
         ];
 
-        // Build image HTML with single-line <img> to avoid markdown post-processing splitting attributes
+        // Build image HTML wrapped in an aspect-ratio container to reserve layout space
         const altText = (image.alt && image.alt !== 'Blog image') ? image.alt : 'Blog image';
         const captionHtml = (image.alt && image.alt !== 'Blog image') ? `<p class="text-sm text-gray-600 mt-2 italic">${image.alt}</p>` : '';
-        const imageTag = `<img src="${image.url}" alt="${image.alt || 'Blog image'}" class="max-w-full h-auto rounded-lg shadow-md mx-auto" style="max-height: 500px; object-fit: contain;" loading="lazy" />`;
-        const imageHtml = `<div class="blog-image-container my-6 text-center">${imageTag}${captionHtml}</div>`;
+        const imageTag = `<div style="width:100%;aspect-ratio:16/9;overflow:hidden;border-radius:12px;background:#f8fafc;">
+            <img src="${image.url}" alt="${image.alt || 'Blog image'}" style="width:100%;height:100%;object-fit:contain;display:block;" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='https://via.placeholder.com/800x500/ff6b6b/ffffff?text=Image+Not+Found'" />
+          </div>`;
+        const imageHtml = `<div class="blog-image-container my-6 text-center" style="max-width:900px;margin-left:auto;margin-right:auto;">${imageTag}${captionHtml}</div>`;
 
         let replaced = false;
         
@@ -340,8 +342,57 @@ blogSchema.methods.convertMarkdownToHtml = function(markdown) {
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-gray-900">$1</strong>');
   html = html.replace(/\*(.*?)\*/g, '<em class="italic text-gray-800">$1</em>');
   
-  // Links
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" class="text-blue-600 hover:text-blue-800 underline transition-colors" target="_blank" rel="noopener noreferrer">$1</a>');
+  // Links with optional attribute block {rel:...,target:...}
+  html = html.replace(/\[(.*?)\]\((.*?)\)(?:\{([^}]+)\})?/g, (match, text, url, attrs) => {
+    let targetAttr = ' target="_blank"';
+    let relAttr = ' rel="noopener noreferrer"';
+    if (attrs) {
+      const parts = attrs.split(',').map(s => s.trim());
+      parts.forEach(p => {
+        if (p.startsWith('rel:')) {
+          const val = p.slice(4).trim().toLowerCase();
+          if (val === 'follow') { relAttr = ''; targetAttr = ''; }
+          else if (val === 'nofollow') relAttr = ' rel="nofollow noopener noreferrer"';
+          else if (val === 'sponsored') relAttr = ' rel="sponsored noopener noreferrer"';
+          else if (val === 'ugc') relAttr = ' rel="ugc noopener noreferrer"';
+        }
+        if (p.startsWith('target:')) {
+          const t = p.slice(7).trim();
+          targetAttr = ` target=\"${t}\"`;
+        }
+      });
+    }
+    const relSection = relAttr ? relAttr : '';
+    const targetSection = targetAttr ? targetAttr : '';
+    return `<a href="${url}" class="text-blue-600 hover:text-blue-800 underline transition-colors"${targetSection}${relSection}>${text}</a>`;
+  });
+
+  // Plain URLs with optional attribute block, e.g. https://site.com/path{rel:nofollow,target:_blank}
+  html = html.replace(/(https?:\/\/[^\s<>{)]+)(?:\{([^}]+)\})?/g, (match, url, attrs) => {
+    // avoid double-wrapping if already an anchor
+    if (match.includes('<a ') || match.includes('href=')) return match;
+    let targetAttr = ' target="_blank"';
+    let relAttr = ' rel="noopener noreferrer"';
+    if (attrs) {
+      const parts = attrs.split(',').map(s => s.trim());
+      parts.forEach(p => {
+        if (p.startsWith('rel:')) {
+          const val = p.slice(4).trim().toLowerCase();
+          if (val === 'follow') { relAttr = ''; targetAttr = ''; }
+          else if (val === 'nofollow') relAttr = ' rel="nofollow noopener noreferrer"';
+          else if (val === 'sponsored') relAttr = ' rel="sponsored noopener noreferrer"';
+          else if (val === 'ugc') relAttr = ' rel="ugc noopener noreferrer"';
+        }
+        if (p.startsWith('target:')) {
+          const t = p.slice(7).trim();
+          targetAttr = ` target=\"${t}\"`;
+        }
+      });
+    }
+    const relSection = relAttr ? relAttr : '';
+    const targetSection = targetAttr ? targetAttr : '';
+    return `<a href="${url}" class="text-blue-600 hover:text-blue-800 underline transition-colors"${targetSection}${relSection}>${url}</a>`;
+  });
   
   // Inline code
   html = html.replace(/`(.*?)`/g, '<code class="bg-gray-100 px-2 py-1 rounded text-sm font-mono border border-gray-300 text-gray-800">$1</code>');
